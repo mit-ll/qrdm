@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package qrdm;
+
+message QRContent {
+  message QRMeta {
+    fixed64 document_hash = 1;
+    uint32 sequence_number = 2;
+    uint32 total_qr_codes = 3;
+    uint32 num_ecc = 4;
+  }
+  QRMeta meta = 1;
+  bytes doc_fragment = 2;
+}
+
+message DocumentPayload{
+  bytes content = 1;
+  string metadata = 2;
+  enum DataType {
+    UTF8_STRING = 0;
+  }
+  DataType data_type = 3;
+}

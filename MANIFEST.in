@@ -1,0 +1,5 @@
+recursive-exclude tests *
+recursive-include src/qrdm/backend *
+recursive-include src/qrdm/qr/data *
+recursive-include src/qrdm/qr/protobuf *
+global-exclude *.py[cod]

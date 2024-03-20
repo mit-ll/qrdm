@@ -1,0 +1,108 @@
+[project]
+name = "qrdm"
+description = "QR Data Manager"
+license = {text = "MIT License"}
+authors = [
+	{name = "Cuyler D. O'Brien", email="cuyler.obrien@ll.mit.edu"},
+	{name = "Eric A. Quintero", email="Eric.Quintero@ll.mit.edu"},
+	{name = "Tod Shannon", email="tod@ll.mit.edu"},
+	{name = "Michael J. Snyder", email="michael.snyder@ll.mit.edu"},
+	{name = "MIT Lincoln Laboratory"},
+]
+requires-python = ">=3.9"
+dependencies = [
+	"charset-normalizer ~= 3.2",
+	"Pillow ~= 10.1",
+	"protobuf >= 4.22",
+	"pydantic ~= 2.2",
+	"pydantic-settings",
+	"PyMuPDF ~= 1.22",
+	"pyzbar ~= 0.1.8",
+	"qrcode ~= 7.3",
+	"reedsolo ~= 1.7.0",
+	"reportlab ~= 4.0",
+	"structlog ~= 23.0",
+	"svglib ~= 1.5",
+]
+keywords = ["QR", "QR code"]
+classifiers = [
+	"Development Status :: 4 - Beta",
+	"License :: OSI Approved :: MIT License",
+	"Programming Language :: Python :: 3",
+	"Programming Language :: Python :: 3.9",
+	"Programming Language :: Python :: 3.10",
+	"Programming Language :: Python :: 3.11",
+	"Programming Language :: Python :: 3.12",
+]
+dynamic = ["version", "readme"]
+
+[project.optional-dependencies]
+test = [
+	"pytest ~= 7.0",
+	"coverage[toml]",
+]
+frontend = [
+	"streamlit ~= 1.28",
+]
+backend = [
+	"fastapi == 0.109",
+	"python-multipart ~= 0.0.6",
+	"starlette[full]",
+	"uvicorn[standard]",
+]
+doc = [
+	"furo",
+	"myst-parser",
+	"sphinx ~= 7.2.0",
+]
+dev = [
+	"qrdm[test,frontend,backend,doc]",
+	"black",
+	"ruff",
+	"tox~=4.0",
+	"build",
+	"twine",
+]
+
+[project.urls]
+Documentation = "https://mit-ll.github.io/qrdm"
+Repository = "https://github.com/mit-ll/qrdm"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages]
+find = {where = ["src"]}
+
+[tool.setuptools.dynamic]
+version = {attr = "qrdm.__version__"}
+readme = {file = ["README.md"], content-type="text/markdown"}
+
+[tool.pytest.ini_options]
+addopts = ["-ra", "-v"]
+junit_family = "xunit2"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+command_line = "-m pytest"
+
+[tool.bandit]
+targets = ["src"]
+exclude_dirs = ["tests", "build"]
+
+[tool.black]
+skip-magic-trailing-comma = true
+
+[tool.ruff]
+include = ["*.py", "*.pyi", "**/pyproject.toml"]
+
+[tool.ruff.lint]
+extend-select = ["I", "RUF", "D"]
+per-file-ignores = { "tests/*" = ["D"] }
+# E501 is handled by black
+extend-ignore = ['E501']
+isort = { known-first-party = ["qrdm"] }
+pydocstyle = { "convention" = "numpy" }
