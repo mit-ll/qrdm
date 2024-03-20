@@ -7,6 +7,5 @@
 .vscode
 build
 dist
-docs/_build
 docs/source/generated
 temp
