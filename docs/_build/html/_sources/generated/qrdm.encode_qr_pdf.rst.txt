@@ -1,0 +1,6 @@
+﻿qrdm.encode\_qr\_pdf
+====================
+
+.. currentmodule:: qrdm
+
+.. autofunction:: encode_qr_pdf
