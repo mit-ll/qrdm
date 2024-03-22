@@ -233,15 +233,16 @@ def _batch_decode_qr_imgs(
     flattened_decodes = list(chain(*decodes))
     qr_contents = _parse_qr_contents(flattened_decodes)
 
-    qr_info = structlog.contextvars.get_contextvars().get("qr_info", {})
-    qr_info.update(
-        {
-            "qr_meta": next(iter(qr_contents.values())).meta.model_dump(
-                exclude={"sequence_number"}
-            )
-        }
-    )
-    structlog.contextvars.bind_contextvars(qr_info=qr_info)
+    if len(qr_contents) > 0:
+        qr_info = structlog.contextvars.get_contextvars().get("qr_info", {})
+        qr_info.update(
+            {
+                "qr_meta": next(iter(qr_contents.values())).meta.model_dump(
+                    exclude={"sequence_number"}
+                )
+            }
+        )
+        structlog.contextvars.bind_contextvars(qr_info=qr_info)
 
     return qr_contents
 

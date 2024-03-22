@@ -6,6 +6,9 @@ import random
 import shutil
 
 import pytest
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import inch
+from reportlab.pdfgen import canvas
 
 from qrdm.exceptions import QREncodeError
 from qrdm.models import DocumentPayload
@@ -89,3 +92,13 @@ def test_ecc_recovery():
     recomposed_document_payload = decode.decode_qr_pdf(input_file=pdf_file_stream)
     assert recomposed_document_payload is not None
     assert recomposed_document_payload == document_payload
+
+
+def test_empty_file(tmp_path):
+    file_path = tmp_path / "empty.pdf"
+    with open(file_path, "wb") as f:
+        c = canvas.Canvas(f, pagesize=letter)
+        c.drawCentredString(4.25 * inch, 0.25 * inch, "DUMMY FILE")
+        c.save()
+    result = decode.decode_qr_pdf(file_path)
+    assert result is None
