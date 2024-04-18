@@ -193,10 +193,10 @@ def _reconstruct_document_payload(
         sorted_payloads = [bytes(x) for x in zip(*fixed_symbols)]
         logger.debug("Post-EC payloads: %r", [p.hex(" ", 4) for p in sorted_payloads])
 
-    total_payload_bytes = b"".join(sorted_payloads).strip(b"\0")
+    total_payload_bytes = b"".join(sorted_payloads)
     logger.debug("Concatenated total payload: %s", total_payload_bytes.hex(" ", 4))
 
-    h = hashlib.shake_256(total_payload_bytes)
+    h = hashlib.shake_256(total_payload_bytes.strip(b"\0"))
     hash_bytes_check = h.digest(8)
     document_hash_check = int.from_bytes(hash_bytes_check, "big")
     logger.debug("Recovered document hash: %s", hash_bytes_check.hex(" ", 4))

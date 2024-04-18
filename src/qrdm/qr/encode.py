@@ -191,7 +191,7 @@ def generate_qr_payloads(
     total_payload_bytes = document_content.model_dump_compressed_bytes()
     logger.debug("Compressed document: %s", total_payload_bytes.hex(" ", 4))
 
-    h = hashlib.shake_256(total_payload_bytes)
+    h = hashlib.shake_256(total_payload_bytes.strip(b"\0"))
     hash_bytes = h.digest(8)
     logger.debug("Document hash: %s", hash_bytes.hex(" ", 4))
     document_hash = int.from_bytes(hash_bytes, "big")

@@ -102,3 +102,13 @@ def test_empty_file(tmp_path):
         c.save()
     result = decode.decode_qr_pdf(file_path)
     assert result is None
+
+
+def test_trailing_null_payload():
+    null_payload = "\0" * 244
+    document_payload = DocumentPayload(content=null_payload)
+    assert document_payload.model_dump_compressed_bytes()[-1] == 0
+    pdf_file_data = encode.encode_qr_pdf(document_content=null_payload)
+    recomposed_document_payload = decode.decode_qr_pdf(input_file=pdf_file_data)
+    assert recomposed_document_payload is not None
+    assert recomposed_document_payload.content == null_payload
