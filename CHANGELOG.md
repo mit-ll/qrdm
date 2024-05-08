@@ -2,7 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased](https://github.com/mit-ll/qrdm/compare/v2.0.2...HEAD)
+## [2.1.0](https://github.com/mit-ll/qrdm/tree/v2.1.0) - 2024-05-08
+
+### Enhancements
+
+- Better handling of error-correction codes for large input documents.
+
+### Documentation
+
+- Added more detailed endpoint description to Sphinx documentation.
 
 ## [2.0.2](https://github.com/mit-ll/qrdm/tree/v2.0.2) - 2024-04-18
 

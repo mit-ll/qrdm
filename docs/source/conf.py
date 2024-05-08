@@ -54,7 +54,7 @@ html_static_path = ["_static"]
 html_theme_options = {
     "dark_logo": "LL_Logo_alone_white.png",
     "light_logo": "LL_Logo_alone_blue.png",
-    "top_of_page_button": None,
+    "top_of_page_buttons": [],
     # GitHub icon embedded as SVG
     # See https://pradyunsg.me/furo/customisation/footer/#using-embedded-svgs
     "footer_icons": [

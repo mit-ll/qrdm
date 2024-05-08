@@ -2,12 +2,14 @@
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
 """Generate QRDM PDFs from source documents."""
+
 from __future__ import annotations
 
 import hashlib
 import io
 import logging
 import shutil
+import warnings
 from collections.abc import Iterator
 from math import ceil
 from pathlib import Path
@@ -212,19 +214,36 @@ def generate_qr_payloads(
             )
         )
 
+    n_raw_fragments = len(payload_fragments)
     if encode_ec_codes:
-        num_ecc = ceil(len(payload_fragments) * qr_const.EC_CODE_PROPORTION)
-        payload_fragments = _generate_ec_fragments(payload_fragments, num_ecc=num_ecc)
+        # Reed-Solomon encoder chunks at ~256, so we just want this fraction _per 256_
+        # at most
+        e = qr_const.EC_CODE_PROPORTION
+        max_ecc = ceil(256 * e / (1 + e))
+        num_ecc = min(max_ecc, ceil(n_raw_fragments * e))
+        n_qr_expected = n_raw_fragments + (
+            1 + (n_raw_fragments // (256 - num_ecc)) * num_ecc
+        )
+        if n_raw_fragments * (1 + e) >= 256:
+            warnings.warn(
+                f"Input data requires {n_qr_expected} QR codes to encode. "
+                "Error-correction requires significantly longer processing above 256 codes."
+            )
     else:
         num_ecc = 0
+        n_qr_expected = n_raw_fragments
 
-    total_qr_codes = len(payload_fragments)
-    if total_qr_codes >= N_MAX_QRS:
+    if n_qr_expected >= N_MAX_QRS:
         msg = (
-            f"The total number of QR codes: {total_qr_codes} exceeds the maximum of "
-            f"{N_MAX_QRS}, consider breaking the file into smaller pieces."
+            f"The provided input requires {n_qr_expected} QR codes to encode, which "
+            f"exceeds the maximum of {N_MAX_QRS}, consider breaking the file into smaller pieces."
         )
         raise QREncodeError(msg)
+
+    if num_ecc > 0:
+        payload_fragments = _generate_ec_fragments(payload_fragments, num_ecc=num_ecc)
+
+    total_qr_codes = len(payload_fragments)
 
     qr_contents: list[bytes] = []
     for sequence_number, fragment in enumerate(payload_fragments):
