@@ -13,6 +13,8 @@ from pathlib import Path
 
 from qrcode.main import QRCode
 from reportlab.graphics import renderPDF
+from reportlab.graphics.shapes import Path as RLPath
+from reportlab.lib.colors import black
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
@@ -96,9 +98,14 @@ def generate_pdf_pages(
         qr_text = None
         include_timestamp = False
 
-    # Render QR codes as images, and convert to reportlab-compatible Drawings
-    qr_imgs = _generate_qr_code_svgs(qr_codes=qr_codes)
-    reportlab_qrs = _format_reportlab_img(imgs=qr_imgs)
+    # Convert QR codes directly to reportlab-compatible vector Drawings
+    # Sort QR codes by size so the layout algorithm can safely assume rows won't grow in height
+    qr_sizes = [code.version for code in qr_codes]
+    code_size_order = sorted(
+        range(len(qr_sizes)), key=qr_sizes.__getitem__, reverse=True
+    )
+    sorted_qr_codes = [qr_codes[ii] for ii in code_size_order]
+    reportlab_qrs = [_convert_qr_to_drawing(code) for code in sorted_qr_codes]
 
     # Calculate positions of QR codes based on their dimensions, and whether space
     # is reserved for text content
@@ -176,6 +183,35 @@ def generate_pdf_pages(
         # Cycle to next page
         c.showPage()
     c.save()
+
+
+MM_TO_POINTS: float = 72.0 / 25.4
+
+
+def _convert_qr_to_drawing(code: QRCode) -> Drawing:
+    """Directly convert a QRCode object into a ReportLab vector Drawing.
+
+    Bypasses SVG serialization and XML parsing for dramatic performance gains
+    while preserving pixel-perfect vector scalability.
+    """
+    matrix = code.modules
+    n = len(matrix)
+    mod_size = (code.box_size / 10.0) * MM_TO_POINTS
+    total_size = n * mod_size
+    d = Drawing(total_size, total_size)
+    p = RLPath(fillColor=black, strokeColor=None)
+    for r, row in enumerate(matrix):
+        y = (n - 1 - r) * mod_size
+        for c, cell in enumerate(row):
+            if cell:
+                x = c * mod_size
+                p.moveTo(x, y)
+                p.lineTo(x + mod_size, y)
+                p.lineTo(x + mod_size, y + mod_size)
+                p.lineTo(x, y + mod_size)
+                p.closePath()
+    d.add(p)
+    return d
 
 
 def _generate_qr_code_svgs(qr_codes: list[QRCode]) -> list[io.BytesIO]:
