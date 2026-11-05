@@ -2,10 +2,12 @@
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
 # ruff: noqa: E402
+import io
 import json
 from typing import Any
 
 import pytest
+from reportlab.pdfgen import canvas
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
@@ -61,3 +63,32 @@ def test_qr_encode_and_decode(metadata):
         assert response_data["metadata"] == metadata
     else:
         assert "metadata" not in response_data
+
+
+def test_qr_encode_with_include_text():
+    response = client.post(
+        "/encode",
+        files={"document": ("payload.txt", payload.encode("utf-8"))},
+        data={"include_text": "true"},
+    )
+    assert response.is_success
+    decode_response = client.post(
+        "/decode", files={"document": ("payload.pdf", response.content)}
+    )
+    assert decode_response.is_success
+    assert decode_response.json()["content"] == payload
+
+
+def test_qr_decode_failure():
+    # Attempt to decode a dummy PDF containing no QR codes
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    c.drawString(100, 100, "No QR codes here")
+    c.save()
+    buf.seek(0)
+
+    response = client.post(
+        "/decode", files={"document": ("empty.pdf", buf.read())}
+    )
+    assert response.status_code == 500
+    assert response.headers.get("QRErrorType") == "QRDecodeError"

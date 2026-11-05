@@ -32,6 +32,7 @@ class EncodeData(BaseModel):
     encode_ec_codes: Optional[bool] = None
     metadata: JsonValue = None
     encoding: Optional[str] = None
+    include_text: Optional[bool] = None
 
     @classmethod
     def as_form_data(
@@ -39,9 +40,15 @@ class EncodeData(BaseModel):
         header_text: Annotated[str, Form()] = "",
         metadata: Annotated[Json, Form()] = None,
         encoding: Annotated[Optional[str], Form()] = None,
+        include_text: Annotated[Optional[bool], Form()] = None,
     ) -> EncodeData:
         """Wrap the`EncodeData` constructor to accept HTTP Form data."""
-        return cls(header_text=header_text, metadata=metadata, encoding=encoding)
+        return cls(
+            header_text=header_text,
+            metadata=metadata,
+            encoding=encoding,
+            include_text=include_text,
+        )
 
 
 @router.post("/encode", summary="Encode a plaintext document as a PDF of QR codes")
@@ -63,6 +70,8 @@ def encode_qr_endpoint(
       a string. If not provided, defaults to automatic detection via the
       `charset_normalizer` package. Valid encodings can be found in the Python
       documentation: https://docs.python.org/3.9/library/codecs.html#standard-encodings
+    - **include_text** (bool, optional): Whether to print plaintext document text underneath
+      QR codes. Defaults to false.
     """
     # upload_file = body.upload_file
     file_data = document.file.read()
@@ -77,6 +86,11 @@ def encode_qr_endpoint(
     try:
         file_content = get_file_content(file_data, encoding=body.encoding)
         logger.debug("Extracted file content: %r", file_content)
+        include_text = (
+            body.include_text
+            if body.include_text is not None
+            else settings.QRDM_INCLUDE_TEXT
+        )
         output_file_data = encode_qr_pdf(
             document_content=file_content,
             header_text=body.header_text,
@@ -84,6 +98,7 @@ def encode_qr_endpoint(
             document_name=upload_filename.name,
             encode_ec_codes=settings.QRDM_ENCODE_EC_CODES,
             error_tolerance=settings.QRDM_ERROR_TOLERANCE,
+            include_text=include_text,
         )
     except Exception as e:
         logger.exception(e, success=False)
@@ -134,8 +149,6 @@ def decode_qr_endpoint(document: Annotated[UploadFile, File()]) -> DocumentPaylo
 
     try:
         decoded_content = decode_qr_pdf(file_data)
-        if decoded_content is None:
-            raise QRDecodeError("Could not locate any QR codes in document.")
     except Exception as e:
         logger.exception(e, success=False)
         if isinstance(e, QRDecodeError):

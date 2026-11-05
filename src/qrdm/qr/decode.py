@@ -5,17 +5,47 @@
 from __future__ import annotations
 
 import concurrent.futures
+import ctypes.util
 import hashlib
 import io
 import logging
 import multiprocessing
+import platform
+import sys
 import time
-import warnings
 from itertools import chain
 from pathlib import Path
 from typing import Optional, Union
 
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
+
+if platform.system() == "Darwin":
+    # On macOS, ctypes.util.find_library("zbar") often fails to locate libraries
+    # in standard Homebrew, Conda, or MacPorts locations.
+    _orig_find_library = ctypes.util.find_library
+
+    def _mac_find_library(name: str) -> Optional[str]:
+        res = _orig_find_library(name)
+        if res:
+            return res
+        if name == "zbar":
+            candidates = [
+                "/opt/homebrew/lib/libzbar.dylib",
+                "/usr/local/lib/libzbar.dylib",
+                "/opt/miniconda3/lib/libzbar.dylib",
+                "/opt/local/lib/libzbar.dylib",
+                str(Path(sys.prefix) / "lib" / "libzbar.dylib"),
+            ]
+            for candidate in candidates:
+                if Path(candidate).is_file():
+                    return candidate
+        return None
+
+    ctypes.util.find_library = _mac_find_library
+
 import reedsolo
 import structlog.contextvars
 from PIL import Image, ImageFilter
@@ -30,7 +60,7 @@ logger = logging.getLogger(__name__)
 
 def decode_qr_pdf(
     input_file: Union[str, Path, bytes, io.BytesIO]
-) -> Optional[DocumentPayload]:
+) -> DocumentPayload:
     """Decode a QRDM PDF into the original document content and metadata.
 
     Parameters
@@ -42,14 +72,19 @@ def decode_qr_pdf(
 
     Returns
     -------
-    decoded_document: DocumentPayload or `None`
-        If no QR codes are detected in the PDF by pyzbar, `None` is returned. Otherwise,
-        returns a Pydantic model containing the encoded document & metadata, with
+    decoded_document: DocumentPayload
+        A Pydantic model containing the encoded document & metadata, with
         attributes:
 
             - content: str - Source document contents
             - metadata: JsonValue, optional - Document metadata, as provided to the
               `metadata` argument of the encoding.
+
+    Raises
+    ------
+    QRDecodeError
+        If no QR codes are detected in the PDF, if insufficient QR codes are
+        recovered, or if checksum verification fails.
 
     Examples
     --------
@@ -76,8 +111,7 @@ def decode_qr_pdf(
     logger.debug(f"Number of extracted payloads: {len(extracted_contents)}")
 
     if len(extracted_contents) == 0:
-        warnings.warn("Failed to extract any QR data from input document")
-        return None
+        raise QRDecodeError("Failed to extract any QR data from input document")
 
     try:
         logger.debug("Reconstructing QR Data")
@@ -157,12 +191,15 @@ def _reconstruct_document_payload(
     num_ecc = first_content.meta.num_ecc
     min_qrs_needed = total_qr_codes - num_ecc
 
+    missing_codes = [ii for ii in range(total_qr_codes) if ii not in extracted_contents]
+
     if len(extracted_contents) < min_qrs_needed:
         msg = (
-            "Insufficient QR payloads for recovery. "
-            + f"Need {min_qrs_needed}, got {len(extracted_contents)}"
+            f"Insufficient QR payloads for recovery. "
+            f"Need at least {min_qrs_needed}, but only got {len(extracted_contents)} of {total_qr_codes}. "
+            f"Missing sequence numbers: {missing_codes}"
         )
-        raise QRDecodeError(msg)
+        raise QRDecodeError(msg, missing_codes=missing_codes)
 
     doc_fragments: dict[int, bytes] = {
         seq: contents.doc_fragment for (seq, contents) in extracted_contents.items()
@@ -186,10 +223,18 @@ def _reconstruct_document_payload(
         logger.debug("Checking error-correction codes")
         received_symbols = list(zip(*sorted_payloads))
         decoding_codec = reedsolo.RSCodec(num_ecc)
-        fixed_symbols = [
-            decoding_codec.decode(x, erase_pos=dropped_code_inds, only_erasures=True)[0]
-            for x in received_symbols
-        ]
+        try:
+            fixed_symbols = [
+                decoding_codec.decode(x, erase_pos=dropped_code_inds, only_erasures=True)[0]
+                for x in received_symbols
+            ]
+        except reedsolo.ReedSolomonError as e:
+            msg = (
+                f"Reed-Solomon error correction failed. "
+                f"Decoded {len(extracted_contents)} of {total_qr_codes} codes. "
+                f"Missing sequence numbers: {dropped_code_inds}"
+            )
+            raise QRDecodeError(msg, missing_codes=dropped_code_inds) from e
         sorted_payloads = [bytes(x) for x in zip(*fixed_symbols)]
         logger.debug("Post-EC payloads: %r", [p.hex(" ", 4) for p in sorted_payloads])
 
@@ -205,7 +250,13 @@ def _reconstruct_document_payload(
             "Recovered document does not match verification hash: "
             f"{document_hash_check} vs. {first_content.meta.document_hash}"
         )
-        raise QRDecodeError("Recovered document does not match checksum")
+        msg = (
+            f"Recovered document does not match checksum. "
+            f"Extracted {len(extracted_contents)} of {total_qr_codes} codes."
+        )
+        if dropped_code_inds:
+            msg += f" Missing sequence numbers: {dropped_code_inds}"
+        raise QRDecodeError(msg, missing_codes=dropped_code_inds if dropped_code_inds else None)
 
     output = DocumentPayload.model_validate_compressed_bytes(total_payload_bytes)
 

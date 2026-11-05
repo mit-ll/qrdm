@@ -21,6 +21,9 @@ st.sidebar.write(f"QRDM v{version}")
 header_text = st.text_input(
     "Document Header & Footer Text (optional)", placeholder="Test"
 )
+include_text = st.checkbox(
+    "Print document text under QR codes (opt-in)", value=False
+)
 
 upload_files = st.file_uploader(
     "Choose file(s) to QR encode", accept_multiple_files=True
@@ -33,7 +36,10 @@ if upload_files is not None:
             file_content = get_file_content(file_data)
             logger.debug("Extracted file content: %r", file_content)
             output_file_data = encode_qr_pdf(
-                file_content, header_text=header_text, document_name=upload_file.name
+                file_content,
+                header_text=header_text,
+                document_name=upload_file.name,
+                include_text=include_text,
             )
             output_filename = filename.stem + "_qr.pdf"
             st.download_button(

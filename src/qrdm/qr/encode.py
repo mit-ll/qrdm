@@ -48,6 +48,8 @@ def encode_qr_pdf(
     document_name: Optional[str] = ...,
     encode_ec_codes: bool = ...,
     error_tolerance: Union[str, ECSettingValues] = ...,
+    include_text: bool = ...,
+    include_timestamp: bool = ...,
 ) -> bytes: ...
 
 
@@ -61,6 +63,8 @@ def encode_qr_pdf(
     document_name: Optional[str] = ...,
     encode_ec_codes: bool = ...,
     error_tolerance: Union[str, ECSettingValues] = ...,
+    include_text: bool = ...,
+    include_timestamp: bool = ...,
 ) -> None: ...
 
 
@@ -73,6 +77,8 @@ def encode_qr_pdf(
     document_name: Optional[str] = None,
     encode_ec_codes: bool = True,
     error_tolerance: Union[str, ECSettingValues] = ECSettingValues.M,
+    include_text: bool = False,
+    include_timestamp: bool = True,
 ) -> Union[None, bytes]:
     """Convert a plaintext document to a PDF containing the document encoded as QR codes.
 
@@ -97,6 +103,12 @@ def encode_qr_pdf(
         individual QR codes fail to scan.
     error_tolerance: One of `"LOW", "MEDIUM", "QUARTILE", "HIGH"`, optional
         Error correction level of the individual QR codes. Defaults to `"MEDIUM"`.
+    include_text: bool, optional
+        Whether to print the plaintext document content underneath the QR codes.
+        Defaults to `False` (opt-in) to preserve privacy.
+    include_timestamp: bool, optional
+        Whether to include the UTC render timestamp in the page footer. Set to
+        `False` for deterministic PDF output. Defaults to `True`.
 
     Returns
     -------
@@ -130,8 +142,9 @@ def encode_qr_pdf(
         qr_codes,
         buf=buf,
         header_text=header_text,
-        qr_text=document_payload.content,
+        qr_text=document_payload.content if include_text else None,
         filename=document_name,
+        include_timestamp=include_timestamp,
     )
     if path is None or isinstance(path, (str, Path)):
         buf.seek(0)

@@ -17,9 +17,14 @@ core Python dependencies.
 
 **IMPORTANT**
 > The QR decoding functionality depends on the [`pyzbar`][pyzbar] python package, which
-> in turn depends on the `zbar` shared library. This may require you to install the
+> in turn depends on the `zbar` shared library. This requires installing the
 > `zbar` package via your system's package manager.
-> See the [`pyzbar` installation instructions][pyzbar-install] for more details.
+>
+> - **macOS**: Install via Homebrew (`brew install zbar`) or Conda (`conda install -c conda-forge zbar`).
+>   If `pyzbar` cannot locate the library on macOS, set:
+>   `export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib:$DYLD_FALLBACK_LIBRARY_PATH` (or `/opt/miniconda3/lib`).
+> - **Linux (Debian/Ubuntu)**: `sudo apt-get install libzbar0`
+> - See the [`pyzbar` installation instructions][pyzbar-install] for more details.
 
 [pyzbar]: https://github.com/NaturalHistoryMuseum/pyzbar
 [pyzbar-install]: https://github.com/NaturalHistoryMuseum/pyzbar?tab=readme-ov-file#installation

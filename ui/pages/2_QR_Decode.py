@@ -27,8 +27,6 @@ if upload_files is not None:
         filename = Path(upload_file.name)
         try:
             decoded_content = decode_qr_pdf(file_data)
-            if decoded_content is None:
-                raise QRDecodeError("Could not locate any QR codes in document.")
             output_name = filename.with_suffix(".txt").name
             output_file = decoded_content.content.encode()
             st.download_button(

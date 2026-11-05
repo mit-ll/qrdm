@@ -51,6 +51,7 @@ def generate_pdf_pages(
     header_text: str = "",
     qr_text: Optional[str] = None,
     filename: Optional[str] = None,
+    include_timestamp: bool = True,
 ) -> None:
     """Write a QRDM PDF from a list of QRCodes to a binary stream.
 
@@ -69,6 +70,9 @@ def generate_pdf_pages(
     filename: str
         The name of source file that was QR encoded, used to caption the page footer if
         not `None`. Defaults to `None`.
+    include_timestamp: bool, optional
+        Whether to include a UTC timestamp in the page footer. Set to False for
+        deterministic PDF output. Defaults to `True`.
 
     """
     # Render QR codes as images, and convert to reportlab-compatible Drawings
@@ -91,7 +95,7 @@ def generate_pdf_pages(
     logger.debug("QRS_POSITIONS: %r", page_qr_positions)
 
     # Add Sourcing Information
-    render_time = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+    render_time = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()) if include_timestamp else ""
     if filename is not None:
         file_path = Path(filename)
         printable_filename = file_path.name
@@ -100,13 +104,23 @@ def generate_pdf_pages(
                 [file_path.stem[:30], " ... .", file_path.suffix]
             )
         doc_title = f"QR Encoding of {filename}"
-        footer_text = f"Content from {printable_filename} at {render_time}"
+        if include_timestamp:
+            footer_text = f"Content from {printable_filename} at {render_time}"
+        else:
+            footer_text = f"Content from {printable_filename}"
     else:
         printable_filename = None
         doc_title = "QR Encoded Document"
-        footer_text = f"Encoded at {render_time}"
+        if include_timestamp:
+            footer_text = f"Encoded at {render_time}"
+        else:
+            footer_text = "QR Encoded Document"
 
-    c = canvas.Canvas(buf, pagesize=letter)
+    c = canvas.Canvas(
+        buf,
+        pagesize=letter,
+        invariant=1 if not include_timestamp else None,
+    )
     c.setAuthor(AUTHOR_NAME)
     c.setTitle(doc_title)
 
