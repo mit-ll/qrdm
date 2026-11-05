@@ -46,6 +46,7 @@ frontend = [
 ]
 backend = [
 	"fastapi == 0.109",
+	"httpx < 0.28",
 	"python-multipart ~= 0.0.6",
 	"starlette[full]",
 	"uvicorn[standard]",
