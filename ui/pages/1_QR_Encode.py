@@ -21,8 +21,20 @@ st.sidebar.write(f"QRDM v{version}")
 header_text = st.text_input(
     "Document Header & Footer Text (optional)", placeholder="Test"
 )
+col1, col2 = st.columns(2)
+with col1:
+    preset = st.selectbox(
+        "Layout Preset",
+        ["default", "flatbed", "photo"],
+        help="flatbed: dense 12 codes/page for scanners; photo: large 4 codes/page for phone cameras; default: 6 codes/page",
+    )
+with col2:
+    minimal_mode = st.checkbox(
+        "Minimal Mode (filename + hash + page only)", value=False
+    )
+
 include_text = st.checkbox(
-    "Print document text under QR codes (opt-in)", value=False
+    "Print document text under QR codes (opt-in)", value=False, disabled=minimal_mode
 )
 
 upload_files = st.file_uploader(
@@ -40,6 +52,8 @@ if upload_files is not None:
                 header_text=header_text,
                 document_name=upload_file.name,
                 include_text=include_text,
+                minimal_mode=minimal_mode,
+                preset=preset,
             )
             output_filename = filename.stem + "_qr.pdf"
             st.download_button(
