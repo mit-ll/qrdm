@@ -13,7 +13,7 @@ import warnings
 from collections.abc import Iterator
 from math import ceil
 from pathlib import Path
-from typing import Optional, Union, overload
+from typing import overload
 
 import qrcode.image.svg as qr_svg
 import reedsolo
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # Sequence number recorded as 32-bit uint
 N_MAX_QRS = 2**32
 
-PathLike = Union[str, Path]
+PathLike = str | Path
 
 
 @overload
@@ -44,10 +44,10 @@ def encode_qr_pdf(
     *,
     path: None = ...,
     header_text: str = ...,
-    metadata: Optional[JsonValue] = ...,
-    document_name: Optional[str] = ...,
+    metadata: JsonValue | None = ...,
+    document_name: str | None = ...,
     encode_ec_codes: bool = ...,
-    error_tolerance: Union[str, ECSettingValues] = ...,
+    error_tolerance: str | ECSettingValues = ...,
     include_text: bool = ...,
     include_timestamp: bool = ...,
 ) -> bytes: ...
@@ -57,12 +57,12 @@ def encode_qr_pdf(
 def encode_qr_pdf(
     document_content: str,
     *,
-    path: Union[PathLike, io.BufferedIOBase] = ...,
+    path: PathLike | io.BufferedIOBase = ...,
     header_text: str = ...,
-    metadata: Optional[JsonValue] = ...,
-    document_name: Optional[str] = ...,
+    metadata: JsonValue | None = ...,
+    document_name: str | None = ...,
     encode_ec_codes: bool = ...,
-    error_tolerance: Union[str, ECSettingValues] = ...,
+    error_tolerance: str | ECSettingValues = ...,
     include_text: bool = ...,
     include_timestamp: bool = ...,
 ) -> None: ...
@@ -93,19 +93,19 @@ PRESETS = {
 def encode_qr_pdf(
     document_content: str,
     *,
-    path: Optional[Union[PathLike, io.BufferedIOBase]] = None,
+    path: PathLike | io.BufferedIOBase | None = None,
     header_text: str = "",
-    metadata: Optional[JsonValue] = None,
-    document_name: Optional[str] = None,
+    metadata: JsonValue | None = None,
+    document_name: str | None = None,
     encode_ec_codes: bool = True,
-    error_tolerance: Optional[Union[str, ECSettingValues]] = None,
+    error_tolerance: str | ECSettingValues | None = None,
     include_text: bool = False,
     include_timestamp: bool = True,
     minimal_mode: bool = False,
-    preset: Optional[str] = None,
+    preset: str | None = None,
     strict: bool = False,
     max_payload_size: int = 5 * 1024 * 1024,
-) -> Union[None, bytes]:
+) -> bytes | None:
     """Convert a plaintext document to a PDF containing the document encoded as QR codes.
 
     Parameters
@@ -160,7 +160,9 @@ def encode_qr_pdf(
 
     cfg = PRESETS.get(preset or "default", PRESETS["default"])
     if preset and preset not in PRESETS:
-        raise ValueError(f"Unknown preset '{preset}'. Valid presets: {list(PRESETS.keys())}")
+        raise ValueError(
+            f"Unknown preset '{preset}'. Valid presets: {list(PRESETS.keys())}"
+        )
 
     if error_tolerance is not None:
         if isinstance(error_tolerance, str):
@@ -191,7 +193,9 @@ def encode_qr_pdf(
         qr_codes,
         buf=buf,
         header_text=header_text,
-        qr_text=document_payload.content if (include_text and not minimal_mode) else None,
+        qr_text=(
+            document_payload.content if (include_text and not minimal_mode) else None
+        ),
         filename=document_name,
         doc_hash=document_payload.sha256,
         include_timestamp=include_timestamp,
@@ -213,7 +217,9 @@ def _validate_strict_bytes(file_data: bytes, max_size: int = 5 * 1024 * 1024) ->
             f"Strict mode violation: file size ({len(file_data)} bytes) exceeds limit ({max_size} bytes)"
         )
     if b"\x00" in file_data:
-        raise QREncodeError("Strict mode violation: NUL byte (0x00) detected in input data")
+        raise QREncodeError(
+            "Strict mode violation: NUL byte (0x00) detected in input data"
+        )
 
     disallowed_signatures = [
         (b"PK\x03\x04", "ZIP / Office OpenXML"),
@@ -224,7 +230,9 @@ def _validate_strict_bytes(file_data: bytes, max_size: int = 5 * 1024 * 1024) ->
     ]
     for sig, name in disallowed_signatures:
         if file_data.startswith(sig):
-            raise QREncodeError(f"Strict mode violation: disallowed binary signature detected ({name})")
+            raise QREncodeError(
+                f"Strict mode violation: disallowed binary signature detected ({name})"
+            )
 
 
 def _validate_strict(content: str, max_size: int = 5 * 1024 * 1024) -> None:
@@ -243,7 +251,7 @@ def _validate_strict(content: str, max_size: int = 5 * 1024 * 1024) -> None:
 
 def get_file_content(
     file_data: bytes,
-    encoding: Optional[str] = None,
+    encoding: str | None = None,
     *,
     strict: bool = False,
     max_size: int = 5 * 1024 * 1024,
@@ -277,7 +285,9 @@ def get_file_content(
                 file_content = file_data.decode("utf-8")
                 encoding = "utf-8"
             except UnicodeDecodeError as e:
-                raise QREncodeError(f"Strict mode violation: invalid UTF-8 content: {e}") from e
+                raise QREncodeError(
+                    f"Strict mode violation: invalid UTF-8 content: {e}"
+                ) from e
             _validate_strict(file_content, max_size=max_size)
             return file_content
 

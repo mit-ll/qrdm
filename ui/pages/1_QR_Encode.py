@@ -2,6 +2,7 @@
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
 """QRDM Streamlit QR-Encoding Page."""
+
 from pathlib import Path
 
 import streamlit as st
@@ -62,7 +63,7 @@ if upload_files is not None:
                 file_name=output_filename,
             )
         except Exception as e:
-            logger.exception(e)
+            logger.exception("Failed to encode %s", filename)
             if isinstance(e, QREncodeError):
                 msg = f"{filename}: ERROR - {e}"
             else:

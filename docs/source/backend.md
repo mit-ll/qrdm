@@ -36,12 +36,64 @@ Request body schema:
   : Encoding used to decode the document file data into a string. If not provided,
     defaults to automatic detection via the `charset_normalizer` package. Valid
     encodings can be found in the [Python standard library
-    documentation](https://docs.python.org/3.9/library/codecs.html#standard-encodings).
+    documentation](https://docs.python.org/3.10/library/codecs.html#standard-encodings).
+
+- **`include_text`** `boolean`, optional
+  : Whether to print plaintext document text underneath QR codes. Defaults to `false`
+    (opt-in for privacy).
+
+- **`minimal_mode`** `boolean`, optional
+  : When `true`, produces minimal pages containing only filename, SHA-256 hash, and page
+    numbers. Defaults to `false`.
+
+- **`preset`** `string`, optional
+  : Layout preset: `'default'` (6 codes/page), `'flatbed'` (12 codes/page for scanners),
+    or `'photo'` (4 large codes/page with Quartile ECC for mobile cameras).
 
 Response:
 
 **`200`** `application/pdf`
 : PDF file containing the QR-encoded document.
+
+### `POST /verify`
+
+Verify a QRDM PDF document without extracting or writing files to disk.
+
+Request body schema:
+
+- **`document`** `string <binary>`, required
+  : QRDM PDF file to be verified
+
+- **`reject_unexpected_codes`** `boolean`, optional
+  : Whether to fail verification if non-QRDM or foreign barcodes appear on pages.
+    Defaults to `false`.
+
+Response:
+
+**`200`** `application/json`
+
+- **`overall`** `boolean`
+  : Overall verification pass/fail status
+- **`status`** `string`
+  : Detailed recovery status: `"recovered"`, `"partial"`, or `"failed"`
+- **`payload_valid`** `boolean`
+  : Whether QR payloads and Reed-Solomon symbols decode cleanly
+- **`hash_matches`** `boolean`
+  : Whether the reconstructed payload matches the document SHA-256
+- **`code_count_correct`** `boolean`
+  : Whether all expected sequence numbers were decoded
+- **`no_unexpected_codes`** `boolean`
+  : Whether any non-QRDM or malformed barcodes were detected
+- **`missing_codes`** `list[integer]`
+  : List of missing sequence indices, if any
+- **`decoded_codes`** `integer`
+  : Number of QR codes successfully decoded
+- **`expected_codes`** `integer`
+  : Total expected QR codes
+- **`sha256`** `string`
+  : Verified SHA-256 hex digest of the document
+- **`errors`** `list[string]`
+  : Error descriptions if verification failed
 
 ### `POST /decode`
 

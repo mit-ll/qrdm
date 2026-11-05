@@ -2,6 +2,7 @@
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
 """Recover source documents from QRDM PDFs."""
+
 from __future__ import annotations
 
 import concurrent.futures
@@ -15,7 +16,6 @@ import sys
 import time
 from itertools import chain
 from pathlib import Path
-from typing import Optional, Union
 
 try:
     import pymupdf as fitz
@@ -27,7 +27,7 @@ if platform.system() == "Darwin":
     # in standard Homebrew, Conda, or MacPorts locations.
     _orig_find_library = ctypes.util.find_library
 
-    def _mac_find_library(name: str) -> Optional[str]:
+    def _mac_find_library(name: str) -> str | None:
         res = _orig_find_library(name)
         if res:
             return res
@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 
 
 def decode_qr_pdf(
-    input_file: Union[str, Path, bytes, io.BytesIO],
+    input_file: str | Path | bytes | io.BytesIO,
     *,
     reject_unexpected_codes: bool = False,
     strict: bool = False,
@@ -124,10 +124,10 @@ def decode_qr_pdf(
         decoded_document = _reconstruct_document_payload(
             extracted_contents=extracted_contents
         )
-    except Exception as e:
+    except Exception:
         msg = f"ERROR: Failed to decode PDF, found {len(extracted_contents)} QR codes"
         logger.error(msg)
-        raise e
+        raise
 
     if strict:
         _validate_strict_payload(decoded_document.content, max_size=max_payload_size)
@@ -143,7 +143,9 @@ def _validate_strict_payload(content: str, max_size: int = 5 * 1024 * 1024) -> N
             f"Strict mode violation: payload size ({len(raw_bytes)} bytes) exceeds limit ({max_size} bytes)"
         )
     if "\x00" in content:
-        raise QRDecodeError("Strict mode violation: NUL byte (0x00) detected in decoded payload")
+        raise QRDecodeError(
+            "Strict mode violation: NUL byte (0x00) detected in decoded payload"
+        )
 
     disallowed_signatures = [
         (b"PK\x03\x04", "ZIP / Office OpenXML"),
@@ -154,11 +156,13 @@ def _validate_strict_payload(content: str, max_size: int = 5 * 1024 * 1024) -> N
     ]
     for sig, name in disallowed_signatures:
         if raw_bytes.startswith(sig):
-            raise QRDecodeError(f"Strict mode violation: disallowed binary signature detected ({name})")
+            raise QRDecodeError(
+                f"Strict mode violation: disallowed binary signature detected ({name})"
+            )
 
 
 def verify_qr_pdf(
-    input_file: Union[str, Path, bytes, io.BytesIO],
+    input_file: str | Path | bytes | io.BytesIO,
     *,
     reject_unexpected_codes: bool = False,
     strict: bool = False,
@@ -194,7 +198,7 @@ def verify_qr_pdf(
             else:
                 stream = input_file
             doc = fitz.open(stream=stream, filetype="pdf")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return VerifyResult(
             overall=False,
             status="failed",
@@ -208,11 +212,9 @@ def verify_qr_pdf(
     try:
         extracted_images = _extract_page_images(doc)
         extracted_contents = _extract_qr_contents_from_images(
-            extracted_images,
-            reject_unexpected_codes=False,
-            non_qrdm_count=non_qrdm,
+            extracted_images, reject_unexpected_codes=False, non_qrdm_count=non_qrdm
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return VerifyResult(
             overall=False,
             status="failed",
@@ -239,8 +241,8 @@ def verify_qr_pdf(
     first_content = next(iter(extracted_contents.values()))
     expected_codes = first_content.meta.total_qr_codes
     missing_codes = [ii for ii in range(expected_codes) if ii not in extracted_contents]
-    code_count_correct = (len(missing_codes) == 0)
-    no_unexpected_codes = (non_qrdm[0] == 0)
+    code_count_correct = len(missing_codes) == 0
+    no_unexpected_codes = non_qrdm[0] == 0
 
     try:
         decoded_doc = _reconstruct_document_payload(extracted_contents)
@@ -258,7 +260,7 @@ def verify_qr_pdf(
         errors.append(str(e))
         if e.missing_codes:
             missing_codes = e.missing_codes
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         payload_valid = False
         hash_matches = False
         sha256 = ""
@@ -302,7 +304,7 @@ def _extract_qr_contents_from_images(
     images: list[Image.Image],
     *,
     reject_unexpected_codes: bool = False,
-    non_qrdm_count: Optional[list[int]] = None,
+    non_qrdm_count: list[int] | None = None,
 ) -> dict[int, QRContent]:
     """Decode QRDM QR code payloads contained in a sequence of images.
 
@@ -357,7 +359,7 @@ def _extract_qr_contents_from_images(
 
 
 def _reconstruct_document_payload(
-    extracted_contents: dict[int, QRContent]
+    extracted_contents: dict[int, QRContent],
 ) -> DocumentPayload:
     """Reconstruct a DocumentPayload from a sequence of individual QR payloads."""
     first_content = next(iter(extracted_contents.values()))
@@ -399,7 +401,9 @@ def _reconstruct_document_payload(
         decoding_codec = reedsolo.RSCodec(num_ecc)
         try:
             fixed_symbols = [
-                decoding_codec.decode(x, erase_pos=dropped_code_inds, only_erasures=True)[0]
+                decoding_codec.decode(
+                    x, erase_pos=dropped_code_inds, only_erasures=True
+                )[0]
                 for x in received_symbols
             ]
         except reedsolo.ReedSolomonError as e:
@@ -428,7 +432,9 @@ def _reconstruct_document_payload(
         )
         if dropped_code_inds:
             msg += f" Missing sequence numbers: {dropped_code_inds}"
-        raise QRDecodeError(msg, missing_codes=dropped_code_inds if dropped_code_inds else None)
+        raise QRDecodeError(
+            msg, missing_codes=dropped_code_inds if dropped_code_inds else None
+        )
 
     output = DocumentPayload.model_validate_compressed_bytes(total_payload_bytes)
 
@@ -439,10 +445,10 @@ def _reconstruct_document_payload(
 
 def _batch_decode_qr_imgs(
     images: list[Image.Image],
-    max_workers: Optional[int] = None,
-    threaded_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None,
+    max_workers: int | None = None,
+    threaded_executor: concurrent.futures.ThreadPoolExecutor | None = None,
     reject_unexpected_codes: bool = False,
-    non_qrdm_count: Optional[list[int]] = None,
+    non_qrdm_count: list[int] | None = None,
 ) -> dict[int, QRContent]:
     """Decode a sequence of QR images into their corresponding data payloads."""
     # Multithreaded Mode
@@ -484,7 +490,7 @@ def _parse_qr_contents(
     decodes: list[Decoded],
     *,
     reject_unexpected_codes: bool = False,
-    non_qrdm_count: Optional[list[int]] = None,
+    non_qrdm_count: list[int] | None = None,
 ) -> dict[int, QRContent]:
     """Parse a list of pyzbar decodes into ordered set of QRContents."""
     extracted_contents = {}
@@ -517,10 +523,10 @@ def _parse_qr_contents(
 
 def _batch_filter_and_decode_qr_imgs(
     images: list[Image.Image],
-    existing_contents: Optional[dict[int, QRContent]] = None,
-    max_workers: Optional[int] = None,
+    existing_contents: dict[int, QRContent] | None = None,
+    max_workers: int | None = None,
     reject_unexpected_codes: bool = False,
-    non_qrdm_count: Optional[list[int]] = None,
+    non_qrdm_count: list[int] | None = None,
 ) -> dict[int, QRContent]:
     """Apply a image filters to page images to attempt to decode additional QR codes."""
     if existing_contents is None:

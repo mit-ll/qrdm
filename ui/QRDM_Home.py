@@ -16,8 +16,7 @@ st.set_page_config(page_title="Home")
 st.title("QRDM Home")
 st.sidebar.write(f"QRDM v{qrdm.__version__}")
 
-st.markdown(
-    """
+st.markdown("""
     ## Overview
     The QR Data Manager (QRDM) assists users in storing and/or transferring text data
     via printed pages that can be printed and scanned. The system works by taking in
@@ -27,5 +26,4 @@ st.markdown(
 
     Links to pages where encoding and decoding can be performed can be found in the
     sidebar of this page.
-    """
-)
+    """)

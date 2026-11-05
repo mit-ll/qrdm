@@ -1,7 +1,6 @@
 # Copyright 2024, Massachusetts Institute of Technology
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
-# ruff: noqa: E402
 import io
 import json
 from typing import Any
@@ -87,9 +86,7 @@ def test_qr_decode_failure():
     c.save()
     buf.seek(0)
 
-    response = client.post(
-        "/decode", files={"document": ("empty.pdf", buf.read())}
-    )
+    response = client.post("/decode", files={"document": ("empty.pdf", buf.read())})
     assert response.status_code == 500
     assert response.headers.get("QRErrorType") == "QRDecodeError"
 
@@ -103,8 +100,7 @@ def test_qr_verify_endpoint():
     assert encode_response.is_success
 
     verify_response = client.post(
-        "/verify",
-        files={"document": ("payload.pdf", encode_response.content)},
+        "/verify", files={"document": ("payload.pdf", encode_response.content)}
     )
     assert verify_response.is_success
     data = verify_response.json()

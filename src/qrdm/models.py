@@ -2,6 +2,7 @@
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
 """Data structures for representing and serializing QR & document payload data."""
+
 from __future__ import annotations
 
 import base64
@@ -15,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from qrdm.qr import protobuf
 
-__all__ = ["ECSettingValues", "QRMeta", "QRContent", "DocumentPayload", "VerifyResult"]
+__all__ = ["DocumentPayload", "ECSettingValues", "QRContent", "QRMeta", "VerifyResult"]
 
 
 class ECSettingValues(str, Enum):

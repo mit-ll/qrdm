@@ -2,6 +2,7 @@
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
 """Render QRDM PDFs from a set of QR codes, via `reportlab`."""
+
 from __future__ import annotations
 
 import io
@@ -9,7 +10,6 @@ import logging
 import time
 from importlib import resources
 from pathlib import Path
-from typing import Optional
 
 from qrcode.main import QRCode
 from reportlab.graphics import renderPDF
@@ -49,9 +49,9 @@ def generate_pdf_pages(
     *,
     buf: io.BufferedIOBase,
     header_text: str = "",
-    qr_text: Optional[str] = None,
-    filename: Optional[str] = None,
-    doc_hash: Optional[str] = None,
+    qr_text: str | None = None,
+    filename: str | None = None,
+    doc_hash: str | None = None,
     include_timestamp: bool = True,
     minimal_mode: bool = False,
 ) -> None:
@@ -106,7 +106,11 @@ def generate_pdf_pages(
     logger.debug("QRS_POSITIONS: %r", page_qr_positions)
 
     # Add Sourcing Information
-    render_time = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()) if include_timestamp else ""
+    render_time = (
+        time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+        if include_timestamp
+        else ""
+    )
     if filename is not None:
         file_path = Path(filename)
         printable_filename = file_path.name
@@ -128,9 +132,7 @@ def generate_pdf_pages(
             footer_text = "QR Encoded Document"
 
     c = canvas.Canvas(
-        buf,
-        pagesize=letter,
-        invariant=1 if not include_timestamp else None,
+        buf, pagesize=letter, invariant=1 if not include_timestamp else None
     )
     c.setAuthor(AUTHOR_NAME)
     c.setTitle(doc_title)
@@ -267,8 +269,8 @@ def _draw_header_footer(
     *,
     header_text: str = "",
     footer_text: str = "",
-    doc_hash: Optional[str] = None,
-    filename: Optional[str] = None,
+    doc_hash: str | None = None,
+    filename: str | None = None,
     page_index: int = 1,
     total_pages: int = 1,
     minimal_mode: bool = False,
@@ -277,7 +279,15 @@ def _draw_header_footer(
         # Minimal mode: one centered line with filename, truncated hash, and page info
         hash_display = f"SHA-256: {doc_hash[:16]}…" if doc_hash else ""
         filename_display = filename or ""
-        parts = [p for p in [filename_display, hash_display, f"Page {page_index} of {total_pages}"] if p]
+        parts = [
+            p
+            for p in [
+                filename_display,
+                hash_display,
+                f"Page {page_index} of {total_pages}",
+            ]
+            if p
+        ]
         minimal_text = " | ".join(parts)
         c.drawCentredString(4.25 * inch, 10.5 * inch, minimal_text)
     else:

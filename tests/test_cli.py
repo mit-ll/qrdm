@@ -2,11 +2,10 @@
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
 """Tests for QRDM CLI entrypoint."""
+
 from __future__ import annotations
 
-import io
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -61,4 +60,3 @@ def test_cli_strict_rejection(tmp_path: Path):
     pdf_out = tmp_path / "bad.pdf"
     rc = main(["encode", str(bad_file), "-o", str(pdf_out), "--strict"])
     assert rc == 2
-

@@ -2,11 +2,12 @@
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
 """FastAPI application router for QR encode & decode functions."""
+
 from __future__ import annotations
 
 import io
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -29,22 +30,22 @@ class EncodeData(BaseModel):
     """`/encode` endpoint request data."""
 
     header_text: str = ""
-    encode_ec_codes: Optional[bool] = None
+    encode_ec_codes: bool | None = None
     metadata: JsonValue = None
-    encoding: Optional[str] = None
-    include_text: Optional[bool] = None
-    minimal_mode: Optional[bool] = None
-    preset: Optional[str] = None
+    encoding: str | None = None
+    include_text: bool | None = None
+    minimal_mode: bool | None = None
+    preset: str | None = None
 
     @classmethod
     def as_form_data(
         cls,
         header_text: Annotated[str, Form()] = "",
         metadata: Annotated[Json, Form()] = None,
-        encoding: Annotated[Optional[str], Form()] = None,
-        include_text: Annotated[Optional[bool], Form()] = None,
-        minimal_mode: Annotated[Optional[bool], Form()] = None,
-        preset: Annotated[Optional[str], Form()] = None,
+        encoding: Annotated[str | None, Form()] = None,
+        include_text: Annotated[bool | None, Form()] = None,
+        minimal_mode: Annotated[bool | None, Form()] = None,
+        preset: Annotated[str | None, Form()] = None,
     ) -> EncodeData:
         """Wrap the`EncodeData` constructor to accept HTTP Form data."""
         return cls(
@@ -61,7 +62,7 @@ class EncodeData(BaseModel):
 def encode_qr_endpoint(
     document: Annotated[UploadFile, File()],
     settings: Annotated[BackendSettings, Depends(get_backend_settings)],
-    body: EncodeData = Depends(EncodeData.as_form_data),
+    body: Annotated[EncodeData, Depends(EncodeData.as_form_data)],
 ) -> Response:
     # FastAPI uses Markdown formatting for docstring rendering in Swagger, etc.
     """Convert a plaintext document to a PDF containing the document encoded as QR codes.
@@ -110,7 +111,7 @@ def encode_qr_endpoint(
             preset=body.preset,
         )
     except Exception as e:
-        logger.exception(e, success=False)
+        logger.exception("Failed to encode document into QR PDF", success=False)
         if isinstance(e, QREncodeError):
             msg = str(e)
         else:
@@ -159,7 +160,7 @@ def decode_qr_endpoint(document: Annotated[UploadFile, File()]) -> DocumentPaylo
     try:
         decoded_content = decode_qr_pdf(file_data)
     except Exception as e:
-        logger.exception(e, success=False)
+        logger.exception("Failed to encode document into QR PDF", success=False)
         if isinstance(e, QRDecodeError):
             msg = str(e)
         else:
@@ -176,8 +177,7 @@ def decode_qr_endpoint(document: Annotated[UploadFile, File()]) -> DocumentPaylo
     summary="Verify a QRDM PDF without extracting content to disk",
 )
 def verify_qr_endpoint(
-    document: Annotated[UploadFile, File()],
-    reject_unexpected_codes: bool = False,
+    document: Annotated[UploadFile, File()], reject_unexpected_codes: bool = False
 ) -> VerifyResult:
     """Verify a QRDM PDF without writing files.
 
@@ -188,9 +188,7 @@ def verify_qr_endpoint(
     structlog.contextvars.bind_contextvars(
         action="QR Verify", input_file={"filename": str(document.filename)}
     )
-    result = verify_qr_pdf(
-        file_data, reject_unexpected_codes=reject_unexpected_codes
-    )
+    result = verify_qr_pdf(file_data, reject_unexpected_codes=reject_unexpected_codes)
     logger.info(
         f"Completed QR Verify of {document.filename!s}: overall={result.overall}, status={result.status}"
     )

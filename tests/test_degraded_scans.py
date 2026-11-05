@@ -2,6 +2,7 @@
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
 """Regression tests for degraded scan recovery (rotation, blur, JPEG compression)."""
+
 from __future__ import annotations
 
 import io
@@ -50,15 +51,14 @@ def _simulate_scan_degradation(
 
 def test_mild_degradation_recovery():
     """Simulate mild degradation: 200 dpi, 1° rotation, blur 0.8, JPEG 60."""
-    content = "Sample document for degraded scan test.\nColumn1,Column2,Column3\nval1,val2,val3\n" * 4
+    content = (
+        "Sample document for degraded scan test.\nColumn1,Column2,Column3\nval1,val2,val3\n"
+        * 4
+    )
     pdf_bytes = encode_qr_pdf(content, encode_ec_codes=True)
 
     degraded_pdf = _simulate_scan_degradation(
-        pdf_bytes,
-        dpi=200,
-        rotate_deg=1.0,
-        blur_radius=0.8,
-        jpeg_quality=60,
+        pdf_bytes, dpi=200, rotate_deg=1.0, blur_radius=0.8, jpeg_quality=60
     )
 
     result = verify_qr_pdf(degraded_pdf)
@@ -75,13 +75,8 @@ def test_harsh_degradation_recovery():
     pdf_bytes = encode_qr_pdf(content, encode_ec_codes=True)
 
     degraded_pdf = _simulate_scan_degradation(
-        pdf_bytes,
-        dpi=150,
-        rotate_deg=1.5,
-        blur_radius=1.0,
-        jpeg_quality=45,
+        pdf_bytes, dpi=150, rotate_deg=1.5, blur_radius=1.0, jpeg_quality=45
     )
 
     recovered = decode_qr_pdf(degraded_pdf)
     assert recovered.content == content
-

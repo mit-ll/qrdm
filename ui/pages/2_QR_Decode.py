@@ -2,6 +2,7 @@
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
 """QRDM Streamlit QR-Encoding Page."""
+
 import io
 from pathlib import Path
 
@@ -19,7 +20,9 @@ st.set_page_config(page_title="QR Decoder")
 st.title("QR Decoder & Verifier")
 st.sidebar.write(f"QRDM v{version}")
 
-action_mode = st.radio("Mode", ["Decode & Download", "Verify Only (No Disk Output)"], horizontal=True)
+action_mode = st.radio(
+    "Mode", ["Decode & Download", "Verify Only (No Disk Output)"], horizontal=True
+)
 
 file_count = 0
 upload_files = st.file_uploader("Choose file(s) to process", accept_multiple_files=True)
@@ -30,9 +33,13 @@ if upload_files is not None:
         if action_mode == "Verify Only (No Disk Output)":
             result = verify_qr_pdf(file_data)
             if result.overall:
-                st.success(f"**{filename.name}**: Verified ({result.decoded_codes}/{result.expected_codes} codes, SHA-256: `{result.sha256[:16]}…`)")
+                st.success(
+                    f"**{filename.name}**: Verified ({result.decoded_codes}/{result.expected_codes} codes, SHA-256: `{result.sha256[:16]}…`)"
+                )
             else:
-                st.error(f"**{filename.name}**: Verification {result.status.upper()} - {', '.join(result.errors)}")
+                st.error(
+                    f"**{filename.name}**: Verification {result.status.upper()} - {', '.join(result.errors)}"
+                )
         else:
             try:
                 decoded_content = decode_qr_pdf(file_data)
@@ -46,7 +53,7 @@ if upload_files is not None:
                 )
                 file_count += 1
             except Exception as e:
-                logger.exception(e)
+                logger.exception("Failed to decode %s", filename)
                 if isinstance(e, QRDecodeError):
                     msg = f"{filename}: ERROR - {e}"
                 else:

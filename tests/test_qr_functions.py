@@ -151,7 +151,9 @@ def test_include_text_opt_in():
     assert decoded.content == secret_text
 
     # Opt-in: include_text=True
-    pdf_with_text = encode.encode_qr_pdf(document_content=secret_text, include_text=True)
+    pdf_with_text = encode.encode_qr_pdf(
+        document_content=secret_text, include_text=True
+    )
     doc_with_text = fitz.open(stream=io.BytesIO(pdf_with_text), filetype="pdf")
     all_text_with_text = "".join(page.get_text() for page in doc_with_text)
     assert secret_text in all_text_with_text
@@ -285,7 +287,9 @@ def test_strict_mode():
     assert "exceeds limit" in str(exc_info.value)
 
     # 4. Valid payload passes strict mode
-    valid_pdf = encode.encode_qr_pdf("Valid plain text document for strict mode.", strict=True)
+    valid_pdf = encode.encode_qr_pdf(
+        "Valid plain text document for strict mode.", strict=True
+    )
     res = decode.verify_qr_pdf(valid_pdf, strict=True)
     assert res.overall is True
 
@@ -293,9 +297,11 @@ def test_strict_mode():
 def test_layout_presets():
     # Large document that spans multiple codes
     test_content = "Row1,Row2,Row3,Row4,Row5,Row6\n" * 80
-    
+
     # Flatbed preset (dense grid, smaller box size 5)
-    pdf_flatbed = encode.encode_qr_pdf(test_content, preset="flatbed", minimal_mode=True)
+    pdf_flatbed = encode.encode_qr_pdf(
+        test_content, preset="flatbed", minimal_mode=True
+    )
     doc_flatbed = fitz.open(stream=io.BytesIO(pdf_flatbed), filetype="pdf")
     pages_flatbed = len(doc_flatbed)
 
