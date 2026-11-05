@@ -16,6 +16,7 @@ and decoding documents as a series of QR codes.
 
 install
 threat_model
+format_specification
 frontend
 backend
 reference

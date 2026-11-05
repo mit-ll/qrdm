@@ -49,6 +49,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-ecc", action="store_true", help="Disable Reed-Solomon error correction codes."
     )
     encode_parser.add_argument(
+        "--preset",
+        choices=["default", "photo", "flatbed"],
+        default="default",
+        help="Layout preset: 'photo' (larger codes for cameras), 'flatbed' (dense grid for scanners), or 'default'.",
+    )
+    encode_parser.add_argument(
         "--strict", action="store_true", help="Enable strict validation (disallow binary/ZIP/Office/NUL bytes)."
     )
 
@@ -96,6 +102,7 @@ def main(args: Optional[list[str]] = None) -> int:
                 include_text=parsed_args.include_text,
                 include_timestamp=not parsed_args.no_timestamp,
                 minimal_mode=parsed_args.minimal,
+                preset=parsed_args.preset,
                 strict=parsed_args.strict,
             )
             sys.stdout.write(f"Encoded {in_path.name} -> {out_path}\n")

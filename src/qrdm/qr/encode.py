@@ -68,6 +68,28 @@ def encode_qr_pdf(
 ) -> None: ...
 
 
+PRESETS = {
+    "default": {
+        "box_size": qr_const.BOX_SIZE,
+        "qr_size": qr_const.QR_SIZE,
+        "error_tolerance": ECSettingValues.M,
+        "ec_proportion": qr_const.EC_CODE_PROPORTION,
+    },
+    "photo": {
+        "box_size": 8,
+        "qr_size": 20,
+        "error_tolerance": ECSettingValues.Q,
+        "ec_proportion": 0.25,
+    },
+    "flatbed": {
+        "box_size": 5,
+        "qr_size": 24,
+        "error_tolerance": ECSettingValues.M,
+        "ec_proportion": 0.15,
+    },
+}
+
+
 def encode_qr_pdf(
     document_content: str,
     *,
@@ -76,10 +98,11 @@ def encode_qr_pdf(
     metadata: Optional[JsonValue] = None,
     document_name: Optional[str] = None,
     encode_ec_codes: bool = True,
-    error_tolerance: Union[str, ECSettingValues] = ECSettingValues.M,
+    error_tolerance: Optional[Union[str, ECSettingValues]] = None,
     include_text: bool = False,
     include_timestamp: bool = True,
     minimal_mode: bool = False,
+    preset: Optional[str] = None,
     strict: bool = False,
     max_payload_size: int = 5 * 1024 * 1024,
 ) -> Union[None, bytes]:
@@ -134,8 +157,20 @@ def encode_qr_pdf(
         buf = io.BytesIO()
     else:
         buf = path
-    if isinstance(error_tolerance, str):
-        error_tolerance = ECSettingValues(error_tolerance)
+
+    cfg = PRESETS.get(preset or "default", PRESETS["default"])
+    if preset and preset not in PRESETS:
+        raise ValueError(f"Unknown preset '{preset}'. Valid presets: {list(PRESETS.keys())}")
+
+    if error_tolerance is not None:
+        if isinstance(error_tolerance, str):
+            error_tolerance = ECSettingValues(error_tolerance)
+    else:
+        error_tolerance = cfg["error_tolerance"]
+
+    box_size = cfg["box_size"]
+    qr_size = cfg["qr_size"]
+    ec_proportion = cfg["ec_proportion"]
 
     if strict:
         _validate_strict(document_content, max_size=max_payload_size)
@@ -145,8 +180,12 @@ def encode_qr_pdf(
         document_payload,
         encode_ec_codes=encode_ec_codes,
         error_tolerance=error_tolerance,
+        qr_size=qr_size,
+        ec_proportion=ec_proportion,
     )
-    qr_codes = generate_qr_codes(qr_payloads, error_tolerance=error_tolerance)
+    qr_codes = generate_qr_codes(
+        qr_payloads, error_tolerance=error_tolerance, box_size=box_size
+    )
 
     generate_pdf_pages(
         qr_codes,
@@ -270,6 +309,8 @@ def generate_qr_payloads(
     *,
     encode_ec_codes: bool,
     error_tolerance: ECSettingValues = ECSettingValues.M,
+    qr_size: int = qr_const.QR_SIZE,
+    ec_proportion: float = qr_const.EC_CODE_PROPORTION,
 ) -> list[bytes]:
     """Construct b85-encoded payloads from a document for QR code construction."""
     logger.debug("Generating QR code payloads")
@@ -280,7 +321,7 @@ def generate_qr_payloads(
     logger.debug("Document hash (SHA-256): %s", hash_bytes.hex(" ", 4))
     document_hash = hash_bytes  # 32-byte SHA-256 digest stored as bytes
 
-    max_qr_bytes = qr_const.QR_CAPACITIES[qr_const.QR_SIZE][error_tolerance.name]
+    max_qr_bytes = qr_const.QR_CAPACITIES[qr_size][error_tolerance.name]
     single_qr_payload_size = max_qr_bytes - PROTOBUF_RESERVED_LEN
     # Reduce payload size to account for b85 inflation
     single_qr_payload_size = (single_qr_payload_size // 5) * 4
@@ -300,7 +341,7 @@ def generate_qr_payloads(
     if encode_ec_codes:
         # Reed-Solomon encoder chunks at ~256, so we just want this fraction _per 256_
         # at most
-        e = qr_const.EC_CODE_PROPORTION
+        e = ec_proportion
         max_ecc = ceil(256 * e / (1 + e))
         num_ecc = min(max_ecc, ceil(n_raw_fragments * e))
         n_qr_expected = n_raw_fragments + (
@@ -389,7 +430,9 @@ def _generate_ec_fragments(
 
 
 def generate_qr_codes(
-    qr_contents: list[bytes], error_tolerance: ECSettingValues = ECSettingValues.M
+    qr_contents: list[bytes],
+    error_tolerance: ECSettingValues = ECSettingValues.M,
+    box_size: int = qr_const.BOX_SIZE,
 ) -> list[QRCode]:
     """Generate a sequence of QRCodes from ASCII payloads."""
     logger.debug("Generating QR codes")
@@ -399,7 +442,7 @@ def generate_qr_codes(
         code = QRCode(
             version=None,
             error_correction=qr_const.ErrorCorrectionLevel[error_tolerance.name],
-            box_size=qr_const.BOX_SIZE,
+            box_size=box_size,
             image_factory=image_factory,
             border=0,
         )

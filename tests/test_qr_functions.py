@@ -288,3 +288,32 @@ def test_strict_mode():
     valid_pdf = encode.encode_qr_pdf("Valid plain text document for strict mode.", strict=True)
     res = decode.verify_qr_pdf(valid_pdf, strict=True)
     assert res.overall is True
+
+
+def test_layout_presets():
+    # Large document that spans multiple codes
+    test_content = "Row1,Row2,Row3,Row4,Row5,Row6\n" * 80
+    
+    # Flatbed preset (dense grid, smaller box size 5)
+    pdf_flatbed = encode.encode_qr_pdf(test_content, preset="flatbed", minimal_mode=True)
+    doc_flatbed = fitz.open(stream=io.BytesIO(pdf_flatbed), filetype="pdf")
+    pages_flatbed = len(doc_flatbed)
+
+    # Photo preset (larger codes, box size 8, higher QR ECC)
+    pdf_photo = encode.encode_qr_pdf(test_content, preset="photo", minimal_mode=True)
+    doc_photo = fitz.open(stream=io.BytesIO(pdf_photo), filetype="pdf")
+    pages_photo = len(doc_photo)
+
+    # Flatbed should pack more codes per page than photo
+    assert pages_flatbed <= pages_photo
+
+    # Both should decode back to original text exactly
+    decoded_flatbed = decode.decode_qr_pdf(pdf_flatbed)
+    assert decoded_flatbed.content == test_content
+
+    decoded_photo = decode.decode_qr_pdf(pdf_photo)
+    assert decoded_photo.content == test_content
+
+    # Invalid preset raises ValueError
+    with pytest.raises(ValueError):
+        encode.encode_qr_pdf(test_content, preset="invalid_preset")

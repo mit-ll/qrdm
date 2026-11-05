@@ -34,6 +34,7 @@ class EncodeData(BaseModel):
     encoding: Optional[str] = None
     include_text: Optional[bool] = None
     minimal_mode: Optional[bool] = None
+    preset: Optional[str] = None
 
     @classmethod
     def as_form_data(
@@ -43,6 +44,7 @@ class EncodeData(BaseModel):
         encoding: Annotated[Optional[str], Form()] = None,
         include_text: Annotated[Optional[bool], Form()] = None,
         minimal_mode: Annotated[Optional[bool], Form()] = None,
+        preset: Annotated[Optional[str], Form()] = None,
     ) -> EncodeData:
         """Wrap the`EncodeData` constructor to accept HTTP Form data."""
         return cls(
@@ -51,6 +53,7 @@ class EncodeData(BaseModel):
             encoding=encoding,
             include_text=include_text,
             minimal_mode=minimal_mode,
+            preset=preset,
         )
 
 
@@ -104,6 +107,7 @@ def encode_qr_endpoint(
             error_tolerance=settings.QRDM_ERROR_TOLERANCE,
             include_text=include_text,
             minimal_mode=minimal_mode,
+            preset=body.preset,
         )
     except Exception as e:
         logger.exception(e, success=False)
