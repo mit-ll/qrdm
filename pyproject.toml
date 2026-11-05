@@ -65,6 +65,9 @@ dev = [
 	"twine",
 ]
 
+[project.scripts]
+qrdm = "qrdm.cli:main"
+
 [project.urls]
 Documentation = "https://mit-ll.github.io/qrdm"
 Repository = "https://github.com/mit-ll/qrdm"

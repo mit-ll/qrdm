@@ -4,7 +4,7 @@ package qrdm;
 
 message QRContent {
   message QRMeta {
-    fixed64 document_hash = 1;
+    bytes document_hash = 1;
     uint32 sequence_number = 2;
     uint32 total_qr_codes = 3;
     uint32 num_ecc = 4;

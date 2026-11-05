@@ -174,3 +174,117 @@ def test_trailing_null_payload():
     recomposed_document_payload = decode.decode_qr_pdf(input_file=pdf_file_data)
     assert recomposed_document_payload is not None
     assert recomposed_document_payload.content == null_payload
+
+
+def test_sha256_hash_in_header_and_meta():
+    test_content = "Verification of SHA-256 header printing."
+    doc_payload = DocumentPayload(content=test_content)
+    expected_sha256 = doc_payload.sha256
+    pdf_bytes = encode.encode_qr_pdf(document_content=test_content)
+
+    # 1. Check SHA-256 is printed in the PDF header
+    doc = fitz.open(stream=io.BytesIO(pdf_bytes), filetype="pdf")
+    pdf_text = "".join(page.get_text() for page in doc)
+    assert f"SHA-256: {expected_sha256}" in pdf_text
+
+    # 2. Check metadata stores 32 bytes
+    qr_payloads = encode.generate_qr_payloads(doc_payload, encode_ec_codes=False)
+    for qp in qr_payloads:
+        content = QRContent.model_validate_b85_bytes(qp)
+        assert len(content.meta.document_hash) == 32
+
+
+def test_minimal_mode():
+    test_content = "Confidential data for minimal page testing."
+    doc_payload = DocumentPayload(content=test_content)
+    pdf_bytes = encode.encode_qr_pdf(
+        document_content=test_content,
+        document_name="secret_plan.txt",
+        minimal_mode=True,
+    )
+    doc = fitz.open(stream=io.BytesIO(pdf_bytes), filetype="pdf")
+    pdf_text = "".join(page.get_text() for page in doc)
+
+    # Filename and truncated hash should appear
+    assert "secret_plan.txt" in pdf_text
+    assert f"SHA-256: {doc_payload.sha256[:16]}" in pdf_text
+    assert "Page 1 of" in pdf_text
+    # Source content should not appear
+    assert test_content not in pdf_text
+
+    # Should still decode cleanly
+    recovered = decode.decode_qr_pdf(pdf_bytes)
+    assert recovered.content == test_content
+
+
+def test_verify_qr_pdf():
+    test_content = "Verify mode testing content with several QR codes.\n" * 10
+    pdf_bytes = encode.encode_qr_pdf(document_content=test_content)
+
+    # Clean verify
+    result = decode.verify_qr_pdf(pdf_bytes)
+    assert result.overall is True
+    assert result.status == "recovered"
+    assert result.payload_valid is True
+    assert result.hash_matches is True
+    assert result.code_count_correct is True
+    assert result.no_unexpected_codes is True
+    assert len(result.missing_codes) == 0
+    assert result.decoded_codes > 0
+    assert result.sha256 == DocumentPayload(content=test_content).sha256
+
+    # Verify invalid file
+    bad_result = decode.verify_qr_pdf(b"not a valid pdf")
+    assert bad_result.overall is False
+    assert bad_result.status == "failed"
+    assert len(bad_result.errors) > 0
+
+
+def test_verify_dropped_codes():
+    large_payload = payload * 5
+    document_payload = DocumentPayload(content=large_payload)
+    qr_payloads = encode.generate_qr_payloads(document_payload, encode_ec_codes=True)
+    qr_codes = encode.generate_qr_codes(qr_payloads)
+
+    # Drop codes so recovery fails
+    dropped_indices = [0, 1]
+    kept_codes = []
+    for code, qr_pl in zip(qr_codes, qr_payloads):
+        content = QRContent.model_validate_b85_bytes(qr_pl)
+        if content.meta.sequence_number not in dropped_indices:
+            kept_codes.append(code)
+
+    pdf_file_stream = io.BytesIO()
+    pdf_writer.generate_pdf_pages(qr_codes=kept_codes, buf=pdf_file_stream)
+
+    result = decode.verify_qr_pdf(pdf_file_stream)
+    assert result.overall is False
+    assert result.status == "partial"
+    assert result.payload_valid is False
+    assert result.hash_matches is False
+    assert result.code_count_correct is False
+    assert 0 in result.missing_codes or 1 in result.missing_codes
+
+
+def test_strict_mode():
+    from qrdm.exceptions import QREncodeError
+
+    # 1. Reject NUL bytes
+    with pytest.raises(QREncodeError) as exc_info:
+        encode.encode_qr_pdf("Hello\x00World", strict=True)
+    assert "NUL byte" in str(exc_info.value)
+
+    # 2. Reject ZIP / Office signature
+    with pytest.raises(QREncodeError) as exc_info:
+        encode.encode_qr_pdf("PK\x03\x04fake_docx_data", strict=True)
+    assert "disallowed binary signature" in str(exc_info.value)
+
+    # 3. Reject payload size exceeding limit
+    with pytest.raises(QREncodeError) as exc_info:
+        encode.encode_qr_pdf("A" * 100, strict=True, max_payload_size=50)
+    assert "exceeds limit" in str(exc_info.value)
+
+    # 4. Valid payload passes strict mode
+    valid_pdf = encode.encode_qr_pdf("Valid plain text document for strict mode.", strict=True)
+    res = decode.verify_qr_pdf(valid_pdf, strict=True)
+    assert res.overall is True

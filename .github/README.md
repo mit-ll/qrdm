@@ -37,6 +37,21 @@ Two main "package extras" are available for `qrdm` that provide REST API applica
 functions. These can be included by specifying `qrdm[backend]` or
 `qrdm[frontend]` to the installation command above, respectively.
 
+### Command-Line Interface (CLI)
+
+QRDM provides a standalone command-line tool `qrdm` for encoding, decoding, and verifying documents without needing a server:
+
+```sh
+# Encode a document to a QR PDF (minimal mode: filename + hash + page number only)
+qrdm encode document.csv -o document_qr.pdf --minimal
+
+# Verify a QR PDF without extracting or writing files
+qrdm verify document_qr.pdf
+
+# Decode a QR PDF back to the original text
+qrdm decode document_qr.pdf -o recovered.csv
+```
+
 ### Web UI via Streamlit
 A [Streamlit](https://streamlit.io) "frontend" can be run via:
 

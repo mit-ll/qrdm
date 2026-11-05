@@ -15,6 +15,7 @@ and decoding documents as a series of QR codes.
 :maxdepth: 2
 
 install
+threat_model
 frontend
 backend
 reference

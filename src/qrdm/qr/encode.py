@@ -79,6 +79,9 @@ def encode_qr_pdf(
     error_tolerance: Union[str, ECSettingValues] = ECSettingValues.M,
     include_text: bool = False,
     include_timestamp: bool = True,
+    minimal_mode: bool = False,
+    strict: bool = False,
+    max_payload_size: int = 5 * 1024 * 1024,
 ) -> Union[None, bytes]:
     """Convert a plaintext document to a PDF containing the document encoded as QR codes.
 
@@ -109,6 +112,10 @@ def encode_qr_pdf(
     include_timestamp: bool, optional
         Whether to include the UTC render timestamp in the page footer. Set to
         `False` for deterministic PDF output. Defaults to `True`.
+    minimal_mode: bool, optional
+        When `True`, print only filename, hash, and page numbers — no footer text
+        or caption. Forces `include_text=False` and `include_timestamp=False`.
+        Defaults to `False`.
 
     Returns
     -------
@@ -130,6 +137,9 @@ def encode_qr_pdf(
     if isinstance(error_tolerance, str):
         error_tolerance = ECSettingValues(error_tolerance)
 
+    if strict:
+        _validate_strict(document_content, max_size=max_payload_size)
+
     document_payload = DocumentPayload(content=document_content, metadata=metadata)
     qr_payloads = generate_qr_payloads(
         document_payload,
@@ -142,9 +152,11 @@ def encode_qr_pdf(
         qr_codes,
         buf=buf,
         header_text=header_text,
-        qr_text=document_payload.content if include_text else None,
+        qr_text=document_payload.content if (include_text and not minimal_mode) else None,
         filename=document_name,
+        doc_hash=document_payload.sha256,
         include_timestamp=include_timestamp,
+        minimal_mode=minimal_mode,
     )
     if path is None or isinstance(path, (str, Path)):
         buf.seek(0)
@@ -155,18 +167,63 @@ def encode_qr_pdf(
             return buf.read()
 
 
-def get_file_content(file_data: bytes, encoding: Optional[str] = None) -> str:
+def _validate_strict_bytes(file_data: bytes, max_size: int = 5 * 1024 * 1024) -> None:
+    """Validate raw binary input against strict policy."""
+    if len(file_data) > max_size:
+        raise QREncodeError(
+            f"Strict mode violation: file size ({len(file_data)} bytes) exceeds limit ({max_size} bytes)"
+        )
+    if b"\x00" in file_data:
+        raise QREncodeError("Strict mode violation: NUL byte (0x00) detected in input data")
+
+    disallowed_signatures = [
+        (b"PK\x03\x04", "ZIP / Office OpenXML"),
+        (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "MS Office Compound Document (OLE2)"),
+        (b"%PDF", "PDF document"),
+        (b"MZ", "DOS/PE executable"),
+        (b"\x7fELF", "ELF binary executable"),
+    ]
+    for sig, name in disallowed_signatures:
+        if file_data.startswith(sig):
+            raise QREncodeError(f"Strict mode violation: disallowed binary signature detected ({name})")
+
+
+def _validate_strict(content: str, max_size: int = 5 * 1024 * 1024) -> None:
+    """Validate document content against strict payload policy."""
+    raw_bytes = content.encode("utf-8")
+    _validate_strict_bytes(raw_bytes, max_size=max_size)
+
+    # Check control characters
+    for ch in content:
+        code = ord(ch)
+        if code < 32 and ch not in ("\n", "\r", "\t"):
+            raise QREncodeError(
+                f"Strict mode violation: disallowed control character (code {code}) in text"
+            )
+
+
+def get_file_content(
+    file_data: bytes,
+    encoding: Optional[str] = None,
+    *,
+    strict: bool = False,
+    max_size: int = 5 * 1024 * 1024,
+) -> str:
     """Extract text file contents from binary file data, with optional encoding detection.
 
     Parameters
     ----------
     file_data: bytes
-        Binary file data}
+        Binary file data
     encoding: str or `None`, optional
         Encoding used to decode the document file data into a string. If not provided,
         defaults to automatic detection via the `charset_normalizer` package. Valid
         encodings can be found in the Python documentation:
         https://docs.python.org/3.9/library/codecs.html#standard-encodings
+    strict: bool, optional
+        If True, rejects binary signatures, NUL bytes, size limits, and invalid UTF-8.
+    max_size: int, optional
+        Maximum allowed byte size in strict mode.
 
     Returns
     -------
@@ -174,6 +231,17 @@ def get_file_content(file_data: bytes, encoding: Optional[str] = None) -> str:
         Decoded file contents
 
     """
+    if strict:
+        _validate_strict_bytes(file_data, max_size=max_size)
+        if encoding is None:
+            try:
+                file_content = file_data.decode("utf-8")
+                encoding = "utf-8"
+            except UnicodeDecodeError as e:
+                raise QREncodeError(f"Strict mode violation: invalid UTF-8 content: {e}") from e
+            _validate_strict(file_content, max_size=max_size)
+            return file_content
+
     input_file_info = structlog.contextvars.get_contextvars().get("input_file", {})
     input_file_info["autodetect_encoding"] = encoding is None
     if encoding is None:
@@ -192,6 +260,8 @@ def get_file_content(file_data: bytes, encoding: Optional[str] = None) -> str:
     logger.debug("Decoded file contents with: %s", encoding)
     input_file_info["encoding"] = encoding
     structlog.contextvars.bind_contextvars(input_file=input_file_info)
+    if strict:
+        _validate_strict(file_content, max_size=max_size)
     return file_content
 
 
@@ -206,10 +276,9 @@ def generate_qr_payloads(
     total_payload_bytes = document_content.model_dump_compressed_bytes()
     logger.debug("Compressed document: %s", total_payload_bytes.hex(" ", 4))
 
-    h = hashlib.shake_256(total_payload_bytes.strip(b"\0"))
-    hash_bytes = h.digest(8)
-    logger.debug("Document hash: %s", hash_bytes.hex(" ", 4))
-    document_hash = int.from_bytes(hash_bytes, "big")
+    hash_bytes = hashlib.sha256(total_payload_bytes.strip(b"\0")).digest()
+    logger.debug("Document hash (SHA-256): %s", hash_bytes.hex(" ", 4))
+    document_hash = hash_bytes  # 32-byte SHA-256 digest stored as bytes
 
     max_qr_bytes = qr_const.QR_CAPACITIES[qr_const.QR_SIZE][error_tolerance.name]
     single_qr_payload_size = max_qr_bytes - PROTOBUF_RESERVED_LEN

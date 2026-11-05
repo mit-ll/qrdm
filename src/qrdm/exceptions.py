@@ -7,10 +7,16 @@ from __future__ import annotations
 
 from typing import Optional
 
-__all__ = ["QRDecodeError", "QREncodeError"]
+__all__ = ["QRDMError", "QRDecodeError", "QREncodeError"]
 
 
-class QRDecodeError(Exception):
+class QRDMError(Exception):
+    """Base exception for all QRDM operations."""
+
+    pass
+
+
+class QRDecodeError(QRDMError):
     """Unable to reconstruct a source document from an input file."""
 
     def __init__(
@@ -23,7 +29,7 @@ class QRDecodeError(Exception):
         self.missing_codes = missing_codes
 
 
-class QREncodeError(Exception):
+class QREncodeError(QRDMError):
     """Unable to construct a QR PDF from an input source document."""
 
     pass

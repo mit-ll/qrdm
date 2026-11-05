@@ -92,3 +92,25 @@ def test_qr_decode_failure():
     )
     assert response.status_code == 500
     assert response.headers.get("QRErrorType") == "QRDecodeError"
+
+
+def test_qr_verify_endpoint():
+    encode_response = client.post(
+        "/encode",
+        files={"document": ("payload.txt", payload.encode("utf-8"))},
+        data={"minimal_mode": "true"},
+    )
+    assert encode_response.is_success
+
+    verify_response = client.post(
+        "/verify",
+        files={"document": ("payload.pdf", encode_response.content)},
+    )
+    assert verify_response.is_success
+    data = verify_response.json()
+    assert data["overall"] is True
+    assert data["status"] == "recovered"
+    assert data["payload_valid"] is True
+    assert data["hash_matches"] is True
+    assert data["code_count_correct"] is True
+    assert data["sha256"] != ""

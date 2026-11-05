@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.2.0](https://github.com/mit-ll/qrdm/tree/v2.2.0) - 2026-11-05
+
+### Added
+- **Full SHA-256 integrity hash**: Replaced 64-bit truncated SHAKE-256 with standard 32-byte cryptographic SHA-256 in Protobuf wire format and models.
+- **Header Hash Display**: Printed SHA-256 hash in PDF page header for human eye inspection and out-of-band comparison.
+- **Verification Mode (`verify_qr_pdf` / `/verify` / `qrdm verify`)**: Non-destructive document verification reporting named check flags (`payload_valid`, `hash_matches`, `code_count_correct`, `no_unexpected_codes`, `missing_codes`).
+- **Command-Line Interface (`qrdm`)**: Zero-dependency CLI entrypoint with `encode`, `decode`, and `verify` subcommands.
+- **Minimal-Page Mode (`minimal_mode`)**: Suppresses verbose captions, body text, and footers, rendering only filename, truncated SHA-256, and page numbers.
+- **Strict Validation Mode**: Optional enforcement rejecting NUL bytes (`0x00`), payload size overages, and binary executable/archive signatures (ZIP, DOCX/XLSX/PPTX, OLE2, ELF, PE, PDF).
+- **Foreign Barcode Detection**: Ability to detect and optionally reject non-QRDM barcodes on pages (`reject_unexpected_codes`).
+- **Missing Sequence Reporting**: `QRDecodeError` now tracks and reports exact missing sequence indices via `missing_codes`.
+- **Deterministic PDF Output**: Set `include_timestamp=False` to omit UTC timestamp and produce bit-identical deterministic PDFs.
+- **Degraded-Scan Test Suite**: Added automated regression tests simulating skew, blur, JPEG compression loss, and low DPI.
+- **Security Threat Model**: Published comprehensive threat model documentation in `docs/source/threat_model.md`.
+- **Self-signed TLS generator**: Added `conf/nginx/generate_certs.sh` and removed committed sample private keys from repository.
+- **Offline Install Bundle**: Added `scripts/create_offline_bundle.sh` for air-gapped environments.
+
+### Changed
+- **Privacy Default**: Made printing plaintext document text opt-in (`include_text=False` by default).
+- Upgraded `fitz` import to `pymupdf` to silence deprecation warnings.
+- Added automatic fallback search paths for `libzbar` on macOS (`/opt/homebrew`, `/opt/miniconda3`, etc.).
+
+### Security
+- Removed committed private key (`server-key.pem`) and certificate from git history.
+- Upgraded wire-format checksum from truncated 64-bit hash to SHA-256.
+
 ## [2.1.0](https://github.com/mit-ll/qrdm/tree/v2.1.0) - 2024-05-08
 
 ### Enhancements

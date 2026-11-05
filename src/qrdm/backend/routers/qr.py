@@ -15,8 +15,8 @@ from pydantic import BaseModel, Json, JsonValue
 
 from qrdm.backend.config import BackendSettings, get_backend_settings
 from qrdm.exceptions import QRDecodeError, QREncodeError
-from qrdm.models import DocumentPayload
-from qrdm.qr.decode import decode_qr_pdf
+from qrdm.models import DocumentPayload, VerifyResult
+from qrdm.qr.decode import decode_qr_pdf, verify_qr_pdf
 from qrdm.qr.encode import encode_qr_pdf, get_file_content
 
 __all__ = ["router"]
@@ -33,6 +33,7 @@ class EncodeData(BaseModel):
     metadata: JsonValue = None
     encoding: Optional[str] = None
     include_text: Optional[bool] = None
+    minimal_mode: Optional[bool] = None
 
     @classmethod
     def as_form_data(
@@ -41,6 +42,7 @@ class EncodeData(BaseModel):
         metadata: Annotated[Json, Form()] = None,
         encoding: Annotated[Optional[str], Form()] = None,
         include_text: Annotated[Optional[bool], Form()] = None,
+        minimal_mode: Annotated[Optional[bool], Form()] = None,
     ) -> EncodeData:
         """Wrap the`EncodeData` constructor to accept HTTP Form data."""
         return cls(
@@ -48,6 +50,7 @@ class EncodeData(BaseModel):
             metadata=metadata,
             encoding=encoding,
             include_text=include_text,
+            minimal_mode=minimal_mode,
         )
 
 
@@ -91,6 +94,7 @@ def encode_qr_endpoint(
             if body.include_text is not None
             else settings.QRDM_INCLUDE_TEXT
         )
+        minimal_mode = body.minimal_mode if body.minimal_mode is not None else False
         output_file_data = encode_qr_pdf(
             document_content=file_content,
             header_text=body.header_text,
@@ -99,6 +103,7 @@ def encode_qr_endpoint(
             encode_ec_codes=settings.QRDM_ENCODE_EC_CODES,
             error_tolerance=settings.QRDM_ERROR_TOLERANCE,
             include_text=include_text,
+            minimal_mode=minimal_mode,
         )
     except Exception as e:
         logger.exception(e, success=False)
@@ -159,3 +164,30 @@ def decode_qr_endpoint(document: Annotated[UploadFile, File()]) -> DocumentPaylo
         raise HTTPException(status_code=500, detail=msg, headers=headers)
     logger.info(f"Completed QR Decode of {document.filename!s}")
     return decoded_content
+
+
+@router.post(
+    "/verify",
+    response_model=VerifyResult,
+    summary="Verify a QRDM PDF without extracting content to disk",
+)
+def verify_qr_endpoint(
+    document: Annotated[UploadFile, File()],
+    reject_unexpected_codes: bool = False,
+) -> VerifyResult:
+    """Verify a QRDM PDF without writing files.
+
+    Returns structured status indicating whether the payload is valid, the SHA-256
+    hash matches, all sequence numbers are present, and whether foreign codes exist.
+    """
+    file_data = io.BytesIO(document.file.read())
+    structlog.contextvars.bind_contextvars(
+        action="QR Verify", input_file={"filename": str(document.filename)}
+    )
+    result = verify_qr_pdf(
+        file_data, reject_unexpected_codes=reject_unexpected_codes
+    )
+    logger.info(
+        f"Completed QR Verify of {document.filename!s}: overall={result.overall}, status={result.status}"
+    )
+    return result

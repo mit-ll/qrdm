@@ -7,7 +7,7 @@ from qrdm.qr.protobuf.qrdm_pb2 import DocumentPayload, QRContent
 __all__ = ["QRContent", "DocumentPayload", "PROTOBUF_RESERVED_LEN"]
 
 MaxLenQrMeta = QRContent.QRMeta(
-    document_hash=2**64 - 1,
+    document_hash=b"\xff" * 32,
     sequence_number=2**32 - 1,
     total_qr_codes=2**32 - 1,
     num_ecc=2**32 - 1,
