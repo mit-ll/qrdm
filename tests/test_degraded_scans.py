@@ -84,3 +84,4 @@ def test_harsh_degradation_recovery():
 
     recovered = decode_qr_pdf(degraded_pdf)
     assert recovered.content == content
+

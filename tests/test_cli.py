@@ -61,3 +61,4 @@ def test_cli_strict_rejection(tmp_path: Path):
     pdf_out = tmp_path / "bad.pdf"
     rc = main(["encode", str(bad_file), "-o", str(pdf_out), "--strict"])
     assert rc == 2
+

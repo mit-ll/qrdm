@@ -53,3 +53,4 @@ echo "4. Packaging archive..."
 tar -czf "${ROOT_DIR}/dist/${ARCHIVE_NAME}" -C "${BUNDLE_DIR}" .
 
 echo "=== Successfully created offline bundle: dist/${ARCHIVE_NAME} ==="
+

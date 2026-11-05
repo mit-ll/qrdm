@@ -46,3 +46,4 @@ This document outlines the security properties, guarantees, and explicit non-gua
 
 3. **Extreme Degradation Boundaries**
    - While Reed-Solomon can recover from lost codes, decoding requires at least `total_codes - num_ecc` codes to be successfully read by the underlying scanner. Severe physical destruction beyond the configured error-correction budget will prevent document recovery.
+
