@@ -8,9 +8,9 @@ from __future__ import annotations
 import io
 
 try:
-    import pymupdf as fitz
+    import pymupdf
 except ImportError:
-    import fitz
+    import fitz as pymupdf
 
 from PIL import Image, ImageFilter
 
@@ -26,8 +26,8 @@ def _simulate_scan_degradation(
     jpeg_quality: int = 60,
 ) -> bytes:
     """Simulate physical scan degradation: resolution scaling, skew, blur, and JPEG loss."""
-    src_doc = fitz.open(stream=io.BytesIO(pdf_bytes), filetype="pdf")
-    degraded_doc = fitz.open()
+    src_doc = pymupdf.open(stream=io.BytesIO(pdf_bytes), filetype="pdf")
+    degraded_doc = pymupdf.open()
 
     for page in src_doc:
         pix = page.get_pixmap(dpi=dpi)
@@ -41,7 +41,7 @@ def _simulate_scan_degradation(
         img.save(jbuf, format="JPEG", quality=jpeg_quality)
         jpeg_data = jbuf.getvalue()
 
-        img_doc = fitz.open(stream=jpeg_data, filetype="jpeg")
+        img_doc = pymupdf.open(stream=jpeg_data, filetype="jpeg")
         rect = img_doc[0].rect
         pdf_page = degraded_doc.new_page(width=rect.width, height=rect.height)
         pdf_page.insert_image(rect, stream=jpeg_data)

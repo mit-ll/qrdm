@@ -15,9 +15,9 @@ from qrdm.models import DocumentPayload, QRContent
 from qrdm.qr import decode, encode, pdf_writer
 
 try:
-    import pymupdf as fitz
+    import pymupdf
 except ImportError:
-    import fitz
+    import fitz as pymupdf
 
 payload = """
     Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor
@@ -144,8 +144,8 @@ def test_include_text_opt_in():
 
     # Default: include_text=False (opt-in)
     pdf_no_text = encode.encode_qr_pdf(document_content=secret_text, include_text=False)
-    doc_no_text = fitz.open(stream=io.BytesIO(pdf_no_text), filetype="pdf")
-    all_text_no_text = "".join(page.get_text() for page in doc_no_text)
+    with pymupdf.open(stream=io.BytesIO(pdf_no_text), filetype="pdf") as doc_no_text:
+        all_text_no_text = "".join(page.get_text() for page in doc_no_text)
     assert secret_text not in all_text_no_text
     decoded = decode.decode_qr_pdf(pdf_no_text)
     assert decoded.content == secret_text
@@ -154,8 +154,10 @@ def test_include_text_opt_in():
     pdf_with_text = encode.encode_qr_pdf(
         document_content=secret_text, include_text=True
     )
-    doc_with_text = fitz.open(stream=io.BytesIO(pdf_with_text), filetype="pdf")
-    all_text_with_text = "".join(page.get_text() for page in doc_with_text)
+    with pymupdf.open(
+        stream=io.BytesIO(pdf_with_text), filetype="pdf"
+    ) as doc_with_text:
+        all_text_with_text = "".join(page.get_text() for page in doc_with_text)
     assert secret_text in all_text_with_text
     decoded_opt = decode.decode_qr_pdf(pdf_with_text)
     assert decoded_opt.content == secret_text
@@ -185,8 +187,8 @@ def test_sha256_hash_in_header_and_meta():
     pdf_bytes = encode.encode_qr_pdf(document_content=test_content)
 
     # 1. Check SHA-256 is printed in the PDF header
-    doc = fitz.open(stream=io.BytesIO(pdf_bytes), filetype="pdf")
-    pdf_text = "".join(page.get_text() for page in doc)
+    with pymupdf.open(stream=io.BytesIO(pdf_bytes), filetype="pdf") as doc:
+        pdf_text = "".join(page.get_text() for page in doc)
     assert f"SHA-256: {expected_sha256}" in pdf_text
 
     # 2. Check metadata stores 32 bytes
@@ -204,8 +206,8 @@ def test_minimal_mode():
         document_name="secret_plan.txt",
         minimal_mode=True,
     )
-    doc = fitz.open(stream=io.BytesIO(pdf_bytes), filetype="pdf")
-    pdf_text = "".join(page.get_text() for page in doc)
+    with pymupdf.open(stream=io.BytesIO(pdf_bytes), filetype="pdf") as doc:
+        pdf_text = "".join(page.get_text() for page in doc)
 
     # Filename and truncated hash should appear
     assert "secret_plan.txt" in pdf_text
@@ -302,13 +304,13 @@ def test_layout_presets():
     pdf_flatbed = encode.encode_qr_pdf(
         test_content, preset="flatbed", minimal_mode=True
     )
-    doc_flatbed = fitz.open(stream=io.BytesIO(pdf_flatbed), filetype="pdf")
-    pages_flatbed = len(doc_flatbed)
+    with pymupdf.open(stream=io.BytesIO(pdf_flatbed), filetype="pdf") as doc_flatbed:
+        pages_flatbed = len(doc_flatbed)
 
     # Photo preset (larger codes, box size 8, higher QR ECC)
     pdf_photo = encode.encode_qr_pdf(test_content, preset="photo", minimal_mode=True)
-    doc_photo = fitz.open(stream=io.BytesIO(pdf_photo), filetype="pdf")
-    pages_photo = len(doc_photo)
+    with pymupdf.open(stream=io.BytesIO(pdf_photo), filetype="pdf") as doc_photo:
+        pages_photo = len(doc_photo)
 
     # Flatbed should pack more codes per page than photo
     assert pages_flatbed <= pages_photo

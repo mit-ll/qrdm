@@ -27,6 +27,16 @@ logger = logging.getLogger(__name__)
 # Document Constants
 AUTHOR_NAME = f"QRDM v{QRDM_VERSION}"
 LOGO_PATH = resources.files("qrdm.qr.data").joinpath("qrdm_logo_red.png")
+_LOGO_BYTES: bytes | None = None
+
+
+def _get_logo_image() -> ImageReader:
+    global _LOGO_BYTES
+    if _LOGO_BYTES is None:
+        with LOGO_PATH.open("rb") as imgfile:
+            _LOGO_BYTES = imgfile.read()
+    return ImageReader(io.BytesIO(_LOGO_BYTES))
+
 
 # Layout Parameters
 # Upper left corner of QR region
@@ -301,17 +311,16 @@ def _draw_header_footer(
             c.setFont("Helvetica", 12)
         c.drawCentredString(4.25 * inch, 0.5 * inch, footer_text)
     # Draw QRDM logo
-    with LOGO_PATH.open("rb") as imgfile:
-        logo_img = ImageReader(imgfile)
-        c.drawImage(
-            logo_img,
-            x=START_X_PX,
-            y=START_Y_PX + inch / 4,
-            width=inch / 4,
-            preserveAspectRatio=True,
-            mask="auto",
-            anchor="sw",
-        )
+    logo_img = _get_logo_image()
+    c.drawImage(
+        logo_img,
+        x=START_X_PX,
+        y=START_Y_PX + inch / 4,
+        width=inch / 4,
+        preserveAspectRatio=True,
+        mask="auto",
+        anchor="sw",
+    )
 
 
 def _add_page_caption(c: canvas.Canvas, text: str) -> None:

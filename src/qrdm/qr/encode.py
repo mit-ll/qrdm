@@ -47,9 +47,13 @@ def encode_qr_pdf(
     metadata: JsonValue | None = ...,
     document_name: str | None = ...,
     encode_ec_codes: bool = ...,
-    error_tolerance: str | ECSettingValues = ...,
+    error_tolerance: str | ECSettingValues | None = ...,
     include_text: bool = ...,
     include_timestamp: bool = ...,
+    minimal_mode: bool = ...,
+    preset: str | None = ...,
+    strict: bool = ...,
+    max_payload_size: int = ...,
 ) -> bytes: ...
 
 
@@ -62,9 +66,13 @@ def encode_qr_pdf(
     metadata: JsonValue | None = ...,
     document_name: str | None = ...,
     encode_ec_codes: bool = ...,
-    error_tolerance: str | ECSettingValues = ...,
+    error_tolerance: str | ECSettingValues | None = ...,
     include_text: bool = ...,
     include_timestamp: bool = ...,
+    minimal_mode: bool = ...,
+    preset: str | None = ...,
+    strict: bool = ...,
+    max_payload_size: int = ...,
 ) -> None: ...
 
 

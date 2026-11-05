@@ -18,9 +18,9 @@ from itertools import chain
 from pathlib import Path
 
 try:
-    import pymupdf as fitz
+    import pymupdf
 except ImportError:
-    import fitz
+    import fitz as pymupdf
 
 if platform.system() == "Darwin":
     # On macOS, ctypes.util.find_library("zbar") often fails to locate libraries
@@ -71,7 +71,7 @@ def decode_qr_pdf(
     ----------
     input_file: Path-like, bytes, or io.BytesIO
         Path to PDF file, binary stream, or bytes containing the file contents of the QR
-        PDF. (e.g. as returned by `encode_qr_pdf`) Passed as input to the `fitz.open`
+        PDF. (e.g. as returned by `encode_qr_pdf`) Passed as input to `pymupdf.open`
         function provided by PyMuPDF.
 
     Returns
@@ -102,15 +102,13 @@ def decode_qr_pdf(
 
     """
     if isinstance(input_file, (str, Path)):
-        doc = fitz.open(input_file, filetype="pdf")
+        doc_open = pymupdf.open(input_file, filetype="pdf")
     else:
-        if isinstance(input_file, bytes):
-            stream = io.BytesIO(input_file)
-        else:
-            stream = input_file
-        doc = fitz.open(stream=stream, filetype="pdf")
+        stream = io.BytesIO(input_file) if isinstance(input_file, bytes) else input_file
+        doc_open = pymupdf.open(stream=stream, filetype="pdf")
 
-    extracted_images = _extract_page_images(doc)
+    with doc_open as doc:
+        extracted_images = _extract_page_images(doc)
     extracted_contents = _extract_qr_contents_from_images(
         extracted_images, reject_unexpected_codes=reject_unexpected_codes
     )
@@ -189,15 +187,18 @@ def verify_qr_pdf(
         Structured verification report containing status, check flags, and metadata.
     """
     errors: list[str] = []
+    non_qrdm = [0]
     try:
         if isinstance(input_file, (str, Path)):
-            doc = fitz.open(input_file, filetype="pdf")
+            doc_open = pymupdf.open(input_file, filetype="pdf")
         else:
-            if isinstance(input_file, bytes):
-                stream = io.BytesIO(input_file)
-            else:
-                stream = input_file
-            doc = fitz.open(stream=stream, filetype="pdf")
+            stream = (
+                io.BytesIO(input_file) if isinstance(input_file, bytes) else input_file
+            )
+            doc_open = pymupdf.open(stream=stream, filetype="pdf")
+
+        with doc_open as doc:
+            extracted_images = _extract_page_images(doc)
     except Exception as e:  # noqa: BLE001
         return VerifyResult(
             overall=False,
@@ -205,12 +206,10 @@ def verify_qr_pdf(
             payload_valid=False,
             hash_matches=False,
             code_count_correct=False,
-            errors=[f"Could not open PDF: {e}"],
+            errors=[f"Could not open or parse PDF: {e}"],
         )
 
-    non_qrdm = [0]
     try:
-        extracted_images = _extract_page_images(doc)
         extracted_contents = _extract_qr_contents_from_images(
             extracted_images, reject_unexpected_codes=False, non_qrdm_count=non_qrdm
         )
@@ -288,13 +287,16 @@ def verify_qr_pdf(
     )
 
 
-def _extract_page_images(doc: fitz.Document) -> list[Image.Image]:
-    """Render PDF pages as a sequence of PNG images."""
+def _extract_page_images(doc: pymupdf.Document) -> list[Image.Image]:
+    """Render PDF pages as a sequence of PIL images."""
     logger.debug("Rendering PDF pages")
     extracted_images = []
     for page in doc:
-        page_pixmap: fitz.Pixmap = page.get_pixmap(dpi=300)
-        extracted_image = Image.open(io.BytesIO(page_pixmap.tobytes("png")))
+        page_pixmap: pymupdf.Pixmap = page.get_pixmap(dpi=300)
+        mode = "RGBA" if page_pixmap.alpha else "RGB"
+        extracted_image = Image.frombytes(
+            mode, [page_pixmap.width, page_pixmap.height], page_pixmap.samples
+        )
         extracted_images.append(extracted_image)
     logger.debug("Rendered %d images from PDF Document", len(extracted_images))
     return extracted_images
