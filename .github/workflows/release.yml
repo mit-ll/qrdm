@@ -142,14 +142,26 @@ jobs:
           draft: false
           prerelease: false
 
+      - name: Check for PyPI Token
+        id: check_token
+        if: steps.version_step.outputs.should_release == 'true'
+        env:
+          PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -n "$PYPI_TOKEN" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish Package to PyPI (Trusted Publishing via OIDC)
-        if: steps.version_step.outputs.should_release == 'true' && (secrets.PYPI_API_TOKEN == '' || secrets.PYPI_API_TOKEN == null)
+        if: steps.version_step.outputs.should_release == 'true' && steps.check_token.outputs.has_token == 'false'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
 
       - name: Publish Package to PyPI (API Token Fallback)
-        if: steps.version_step.outputs.should_release == 'true' && secrets.PYPI_API_TOKEN != '' && secrets.PYPI_API_TOKEN != null
+        if: steps.version_step.outputs.should_release == 'true' && steps.check_token.outputs.has_token == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
