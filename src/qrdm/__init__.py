@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 """QRDM provides tools for encoding and decoding documents as a series of QR codes."""
 
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 
 from qrdm.models import VerifyResult
 from qrdm.qr.decode import decode_qr_pdf, verify_qr_pdf
