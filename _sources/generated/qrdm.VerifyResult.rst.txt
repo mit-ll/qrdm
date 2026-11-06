@@ -1,0 +1,67 @@
+﻿qrdm.VerifyResult
+=================
+
+.. currentmodule:: qrdm
+
+.. autoclass:: VerifyResult
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~VerifyResult.__init__
+      ~VerifyResult.construct
+      ~VerifyResult.copy
+      ~VerifyResult.dict
+      ~VerifyResult.from_orm
+      ~VerifyResult.json
+      ~VerifyResult.model_construct
+      ~VerifyResult.model_copy
+      ~VerifyResult.model_dump
+      ~VerifyResult.model_dump_json
+      ~VerifyResult.model_json_schema
+      ~VerifyResult.model_parametrized_name
+      ~VerifyResult.model_post_init
+      ~VerifyResult.model_rebuild
+      ~VerifyResult.model_validate
+      ~VerifyResult.model_validate_json
+      ~VerifyResult.model_validate_strings
+      ~VerifyResult.parse_file
+      ~VerifyResult.parse_obj
+      ~VerifyResult.parse_raw
+      ~VerifyResult.schema
+      ~VerifyResult.schema_json
+      ~VerifyResult.update_forward_refs
+      ~VerifyResult.validate
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~VerifyResult.model_computed_fields
+      ~VerifyResult.model_config
+      ~VerifyResult.model_extra
+      ~VerifyResult.model_fields
+      ~VerifyResult.model_fields_set
+      ~VerifyResult.overall
+      ~VerifyResult.status
+      ~VerifyResult.payload_valid
+      ~VerifyResult.hash_matches
+      ~VerifyResult.code_count_correct
+      ~VerifyResult.no_unexpected_codes
+      ~VerifyResult.missing_codes
+      ~VerifyResult.decoded_codes
+      ~VerifyResult.expected_codes
+      ~VerifyResult.unexpected_codes
+      ~VerifyResult.sha256
+      ~VerifyResult.errors
+   
+   

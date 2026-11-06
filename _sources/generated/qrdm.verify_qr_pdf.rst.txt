@@ -1,0 +1,6 @@
+﻿qrdm.verify\_qr\_pdf
+====================
+
+.. currentmodule:: qrdm
+
+.. autofunction:: verify_qr_pdf

@@ -1,0 +1,6 @@
+﻿qrdm.decode\_qr\_pdf
+====================
+
+.. currentmodule:: qrdm
+
+.. autofunction:: decode_qr_pdf
