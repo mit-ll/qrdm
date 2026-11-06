@@ -342,9 +342,10 @@ def generate_qr_payloads(
         from qrdm.qr.crypto import encrypt_payload
 
         total_payload_bytes = encrypt_payload(total_payload_bytes, passphrase)
+        hash_bytes = hashlib.sha256(total_payload_bytes).digest()
+    else:
+        hash_bytes = hashlib.sha256(total_payload_bytes.strip(b"\0")).digest()
     logger.debug("Compressed document: %s", total_payload_bytes.hex(" ", 4))
-
-    hash_bytes = hashlib.sha256(total_payload_bytes.strip(b"\0")).digest()
     logger.debug("Document hash (SHA-256): %s", hash_bytes.hex(" ", 4))
     document_hash = hash_bytes  # 32-byte SHA-256 digest stored as bytes
 

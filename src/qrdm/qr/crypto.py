@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import struct
 
 try:
     from cryptography.exceptions import InvalidTag
@@ -22,15 +23,15 @@ from qrdm.exceptions import QRDecodeError, QREncodeError
 MAGIC_ENCRYPTED: bytes = b"QRE1"
 SALT_SIZE: int = 16
 NONCE_SIZE: int = 12
+HEADER_SIZE: int = (
+    4 + SALT_SIZE + NONCE_SIZE + 4
+)  # Magic (4) + Salt (16) + Nonce (12) + Length (4)
 PBKDF2_ITERATIONS: int = 100_000
 
 
 def is_encrypted(data: bytes) -> bool:
     """Return True if data starts with the QRDM encrypted payload header."""
-    return (
-        data.startswith(MAGIC_ENCRYPTED)
-        and len(data) >= len(MAGIC_ENCRYPTED) + SALT_SIZE + NONCE_SIZE + 16
-    )
+    return data.startswith(MAGIC_ENCRYPTED) and len(data) >= HEADER_SIZE + 16
 
 
 def encrypt_payload(data: bytes, passphrase: str) -> bytes:
@@ -49,7 +50,8 @@ def encrypt_payload(data: bytes, passphrase: str) -> bytes:
     nonce = os.urandom(NONCE_SIZE)
     aesgcm = AESGCM(key)
     ciphertext = aesgcm.encrypt(nonce, data, None)
-    return MAGIC_ENCRYPTED + salt + nonce + ciphertext
+    ct_len = struct.pack(">I", len(ciphertext))
+    return MAGIC_ENCRYPTED + salt + nonce + ct_len + ciphertext
 
 
 def decrypt_payload(encrypted_data: bytes, passphrase: str) -> bytes:
@@ -65,7 +67,9 @@ def decrypt_payload(encrypted_data: bytes, passphrase: str) -> bytes:
 
     salt = encrypted_data[4 : 4 + SALT_SIZE]
     nonce = encrypted_data[4 + SALT_SIZE : 4 + SALT_SIZE + NONCE_SIZE]
-    ciphertext = encrypted_data[4 + SALT_SIZE + NONCE_SIZE :]
+    len_offset = 4 + SALT_SIZE + NONCE_SIZE
+    ct_len = struct.unpack(">I", encrypted_data[len_offset : len_offset + 4])[0]
+    ciphertext = encrypted_data[len_offset + 4 : len_offset + 4 + ct_len]
 
     key = hashlib.pbkdf2_hmac(
         "sha256", passphrase.encode("utf-8"), salt, PBKDF2_ITERATIONS, dklen=32

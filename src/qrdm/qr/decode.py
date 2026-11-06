@@ -518,34 +518,63 @@ def _reconstruct_document_payload(
     total_payload_bytes = b"".join(sorted_payloads)
     logger.debug("Concatenated total payload: %s", total_payload_bytes.hex(" ", 4))
 
-    hash_bytes_check = hashlib.sha256(total_payload_bytes.strip(b"\0")).digest()
-    logger.debug("Recovered document hash (SHA-256): %s", hash_bytes_check.hex(" ", 4))
-    if hash_bytes_check != first_content.meta.document_hash:
-        logger.error(
-            "Recovered document does not match verification hash: "
-            f"{hash_bytes_check.hex()} vs. {first_content.meta.document_hash.hex()}"
-        )
-        msg = (
-            f"Recovered document does not match checksum. "
-            f"Extracted {len(extracted_contents)} of {total_qr_codes} codes."
-        )
-        if dropped_code_inds:
-            msg += f" Missing sequence numbers: {dropped_code_inds}"
-        raise QRDecodeError(
-            msg, missing_codes=dropped_code_inds if dropped_code_inds else None
-        )
+    import struct
 
-    raw_payload = total_payload_bytes.strip(b"\0")
     from qrdm.qr import crypto
 
-    if crypto.is_encrypted(raw_payload):
+    if crypto.is_encrypted(total_payload_bytes):
+        len_offset = 4 + crypto.SALT_SIZE + crypto.NONCE_SIZE
+        ct_len = struct.unpack(">I", total_payload_bytes[len_offset : len_offset + 4])[
+            0
+        ]
+        exact_len = crypto.HEADER_SIZE + ct_len
+        raw_payload = total_payload_bytes[:exact_len]
+        hash_bytes_check = hashlib.sha256(raw_payload).digest()
+        logger.debug(
+            "Recovered document hash (SHA-256): %s", hash_bytes_check.hex(" ", 4)
+        )
+        if hash_bytes_check != first_content.meta.document_hash:
+            logger.error(
+                "Recovered document does not match verification hash: "
+                f"{hash_bytes_check.hex()} vs. {first_content.meta.document_hash.hex()}"
+            )
+            msg = (
+                f"Recovered document does not match checksum. "
+                f"Extracted {len(extracted_contents)} of {total_qr_codes} codes."
+            )
+            if dropped_code_inds:
+                msg += f" Missing sequence numbers: {dropped_code_inds}"
+            raise QRDecodeError(
+                msg, missing_codes=dropped_code_inds if dropped_code_inds else None
+            )
+
         if not passphrase:
             raise QRDecodeError(
                 "Encrypted payload detected: passphrase required to decode."
             )
         raw_payload = crypto.decrypt_payload(raw_payload, passphrase)
-    elif passphrase:
-        logger.warning("Passphrase provided but payload is not encrypted.")
+    else:
+        raw_payload = total_payload_bytes.strip(b"\0")
+        hash_bytes_check = hashlib.sha256(raw_payload).digest()
+        logger.debug(
+            "Recovered document hash (SHA-256): %s", hash_bytes_check.hex(" ", 4)
+        )
+        if hash_bytes_check != first_content.meta.document_hash:
+            logger.error(
+                "Recovered document does not match verification hash: "
+                f"{hash_bytes_check.hex()} vs. {first_content.meta.document_hash.hex()}"
+            )
+            msg = (
+                f"Recovered document does not match checksum. "
+                f"Extracted {len(extracted_contents)} of {total_qr_codes} codes."
+            )
+            if dropped_code_inds:
+                msg += f" Missing sequence numbers: {dropped_code_inds}"
+            raise QRDecodeError(
+                msg, missing_codes=dropped_code_inds if dropped_code_inds else None
+            )
+        if passphrase:
+            logger.warning("Passphrase provided but payload is not encrypted.")
 
     output = DocumentPayload.model_validate_compressed_bytes(raw_payload)
 
