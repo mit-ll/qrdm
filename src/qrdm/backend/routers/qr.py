@@ -82,6 +82,11 @@ def encode_qr_endpoint(
     """
     # upload_file = body.upload_file
     file_data = document.file.read()
+    if len(file_data) > settings.QRDM_MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Uploaded file ({len(file_data)} bytes) exceeds size limit ({settings.QRDM_MAX_UPLOAD_SIZE} bytes)",
+        )
     if document.filename is not None:
         upload_filename = Path(document.filename)
     else:
@@ -136,7 +141,10 @@ def encode_qr_endpoint(
     response_model_exclude_none=True,
     summary="Reconstruct a source document from a QRDM PDF",
 )
-def decode_qr_endpoint(document: Annotated[UploadFile, File()]) -> DocumentPayload:
+def decode_qr_endpoint(
+    document: Annotated[UploadFile, File()],
+    settings: Annotated[BackendSettings, Depends(get_backend_settings)],
+) -> DocumentPayload:
     # FastAPI uses Markdown formatting for docstring rendering in Swagger, etc.
     """Reconstruct a source document from a QRDM PDF.
 
@@ -152,7 +160,13 @@ def decode_qr_endpoint(document: Annotated[UploadFile, File()]) -> DocumentPaylo
       field of the `/encode` endpoint.
 
     """
-    file_data = io.BytesIO(document.file.read())
+    raw_bytes = document.file.read()
+    if len(raw_bytes) > settings.QRDM_MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Uploaded file ({len(raw_bytes)} bytes) exceeds size limit ({settings.QRDM_MAX_UPLOAD_SIZE} bytes)",
+        )
+    file_data = io.BytesIO(raw_bytes)
     structlog.contextvars.bind_contextvars(
         action="QR Decode", input_file={"filename": str(document.filename)}
     )
@@ -177,14 +191,22 @@ def decode_qr_endpoint(document: Annotated[UploadFile, File()]) -> DocumentPaylo
     summary="Verify a QRDM PDF without extracting content to disk",
 )
 def verify_qr_endpoint(
-    document: Annotated[UploadFile, File()], reject_unexpected_codes: bool = False
+    document: Annotated[UploadFile, File()],
+    settings: Annotated[BackendSettings, Depends(get_backend_settings)],
+    reject_unexpected_codes: bool = False,
 ) -> VerifyResult:
     """Verify a QRDM PDF without writing files.
 
     Returns structured status indicating whether the payload is valid, the SHA-256
     hash matches, all sequence numbers are present, and whether foreign codes exist.
     """
-    file_data = io.BytesIO(document.file.read())
+    raw_bytes = document.file.read()
+    if len(raw_bytes) > settings.QRDM_MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Uploaded file ({len(raw_bytes)} bytes) exceeds size limit ({settings.QRDM_MAX_UPLOAD_SIZE} bytes)",
+        )
+    file_data = io.BytesIO(raw_bytes)
     structlog.contextvars.bind_contextvars(
         action="QR Verify", input_file={"filename": str(document.filename)}
     )

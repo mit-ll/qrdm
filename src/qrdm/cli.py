@@ -33,14 +33,16 @@ def build_parser() -> argparse.ArgumentParser:
         "encode", help="Encode a text document into a QR PDF."
     )
     encode_parser.add_argument(
-        "input_file", type=Path, help="Path to input text/csv/tsv document."
+        "input_file",
+        type=str,
+        help="Path to input text/csv/tsv document, or '-' to read from stdin.",
     )
     encode_parser.add_argument(
         "-o",
         "--output",
-        type=Path,
+        type=str,
         default=None,
-        help="Output PDF file path (default: <input>_qr.pdf).",
+        help="Output PDF file path (default: <input>_qr.pdf), or '-' for stdout.",
     )
     encode_parser.add_argument(
         "--header",
@@ -71,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--preset",
         choices=["default", "photo", "flatbed"],
         default="default",
-        help="Layout preset: 'photo' (larger codes for cameras), 'flatbed' (dense grid for scanners), or 'default'.",
+        help="Layout preset: 'flatbed' (dense grid for document scanners), 'photo' (larger codes with high ECC), or 'default'.",
     )
     encode_parser.add_argument(
         "--strict",
@@ -83,11 +85,13 @@ def build_parser() -> argparse.ArgumentParser:
     decode_parser = subparsers.add_parser(
         "decode", help="Decode a QR PDF back to the original source document."
     )
-    decode_parser.add_argument("input_pdf", type=Path, help="Path to QRDM PDF file.")
+    decode_parser.add_argument(
+        "input_pdf", type=str, help="Path to QRDM PDF file, or '-' to read from stdin."
+    )
     decode_parser.add_argument(
         "-o",
         "--output",
-        type=Path,
+        type=str,
         default=None,
         help="Output file path (default: print content to stdout).",
     )
@@ -101,11 +105,23 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser = subparsers.add_parser(
         "verify", help="Verify a QR PDF without extracting content to disk."
     )
-    verify_parser.add_argument("input_pdf", type=Path, help="Path to QRDM PDF file.")
+    verify_parser.add_argument(
+        "input_pdf", type=str, help="Path to QRDM PDF file, or '-' to read from stdin."
+    )
     verify_parser.add_argument(
         "--reject-unexpected",
         action="store_true",
         help="Fail verification if non-QRDM barcodes are found.",
+    )
+    verify_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output verification result as machine-readable JSON.",
+    )
+    verify_parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Enable strict validation policy during verification.",
     )
 
     return parser
@@ -117,23 +133,28 @@ def main(args: list[str] | None = None) -> int:
     parsed_args = parser.parse_args(args)
 
     if parsed_args.command == "encode":
-        in_path: Path = parsed_args.input_file
-        if not in_path.is_file():
-            sys.stderr.write(f"Error: Input file '{in_path}' does not exist.\n")
-            return 1
+        in_arg = str(parsed_args.input_file)
+        is_stdin = in_arg == "-"
+        if not is_stdin:
+            in_path = Path(in_arg)
+            if not in_path.is_file():
+                sys.stderr.write(f"Error: Input file '{in_path}' does not exist.\n")
+                return 1
+            file_data = in_path.read_bytes()
+            doc_name = in_path.name
+        else:
+            file_data = sys.stdin.buffer.read()
+            doc_name = "stdin"
 
-        out_path: Path = parsed_args.output or in_path.with_name(
-            f"{in_path.stem}_qr.pdf"
-        )
+        out_arg = str(parsed_args.output) if parsed_args.output else None
+        is_stdout = out_arg == "-" or (is_stdin and out_arg is None)
 
         try:
-            file_data = in_path.read_bytes()
             content = get_file_content(file_data, strict=parsed_args.strict)
-            encode_qr_pdf(
+            pdf_bytes = encode_qr_pdf(
                 document_content=content,
-                path=out_path,
                 header_text=parsed_args.header,
-                document_name=in_path.name,
+                document_name=doc_name,
                 encode_ec_codes=not parsed_args.no_ecc,
                 include_text=parsed_args.include_text,
                 include_timestamp=not parsed_args.no_timestamp,
@@ -141,25 +162,43 @@ def main(args: list[str] | None = None) -> int:
                 preset=parsed_args.preset,
                 strict=parsed_args.strict,
             )
-            sys.stdout.write(f"Encoded {in_path.name} -> {out_path}\n")
+            if is_stdout:
+                sys.stdout.buffer.write(pdf_bytes)
+                sys.stdout.buffer.flush()
+            else:
+                out_path = (
+                    Path(out_arg)
+                    if out_arg
+                    else in_path.with_name(f"{in_path.stem}_qr.pdf")
+                )
+                out_path.write_bytes(pdf_bytes)
+                sys.stdout.write(f"Encoded {doc_name} -> {out_path}\n")
             return 0
         except QRDMError as e:
             sys.stderr.write(f"Encode error: {e}\n")
             return 2
 
     elif parsed_args.command == "decode":
-        pdf_path: Path = parsed_args.input_pdf
-        if not pdf_path.is_file():
-            sys.stderr.write(f"Error: Input PDF '{pdf_path}' does not exist.\n")
-            return 1
+        pdf_arg = str(parsed_args.input_pdf)
+        if pdf_arg == "-":
+            pdf_input: str | Path | bytes = sys.stdin.buffer.read()
+            pdf_name = "stdin"
+        else:
+            pdf_path = Path(pdf_arg)
+            if not pdf_path.is_file():
+                sys.stderr.write(f"Error: Input PDF '{pdf_path}' does not exist.\n")
+                return 1
+            pdf_input = pdf_path
+            pdf_name = pdf_path.name
 
         try:
             doc = decode_qr_pdf(
-                pdf_path, reject_unexpected_codes=parsed_args.reject_unexpected
+                pdf_input, reject_unexpected_codes=parsed_args.reject_unexpected
             )
-            if parsed_args.output:
-                parsed_args.output.write_text(doc.content, encoding="utf-8")
-                sys.stdout.write(f"Decoded {pdf_path.name} -> {parsed_args.output}\n")
+            if parsed_args.output and str(parsed_args.output) != "-":
+                out_p = Path(parsed_args.output)
+                out_p.write_text(doc.content, encoding="utf-8")
+                sys.stdout.write(f"Decoded {pdf_name} -> {out_p}\n")
             else:
                 sys.stdout.write(doc.content)
             return 0
@@ -170,14 +209,25 @@ def main(args: list[str] | None = None) -> int:
             return 2
 
     elif parsed_args.command == "verify":
-        pdf_path: Path = parsed_args.input_pdf
-        if not pdf_path.is_file():
-            sys.stderr.write(f"Error: Input PDF '{pdf_path}' does not exist.\n")
-            return 1
+        pdf_arg = str(parsed_args.input_pdf)
+        if pdf_arg == "-":
+            pdf_input = sys.stdin.buffer.read()
+        else:
+            pdf_path = Path(pdf_arg)
+            if not pdf_path.is_file():
+                sys.stderr.write(f"Error: Input PDF '{pdf_path}' does not exist.\n")
+                return 1
+            pdf_input = pdf_path
 
         result: VerifyResult = verify_qr_pdf(
-            pdf_path, reject_unexpected_codes=parsed_args.reject_unexpected
+            pdf_input,
+            reject_unexpected_codes=parsed_args.reject_unexpected,
+            strict=parsed_args.strict,
         )
+
+        if parsed_args.json:
+            sys.stdout.write(result.model_dump_json(indent=2) + "\n")
+            return 0 if result.overall else 2
 
         status_symbol = "✓" if result.overall else "✗"
         sys.stdout.write(

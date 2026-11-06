@@ -60,3 +60,56 @@ def test_cli_strict_rejection(tmp_path: Path):
     pdf_out = tmp_path / "bad.pdf"
     rc = main(["encode", str(bad_file), "-o", str(pdf_out), "--strict"])
     assert rc == 2
+
+
+def test_cli_verify_json(tmp_path: Path, capsys):
+    test_file = tmp_path / "data.txt"
+    test_content = "Machine readable verify test"
+    test_file.write_text(test_content, encoding="utf-8")
+    pdf_out = tmp_path / "data_qr.pdf"
+    main(["encode", str(test_file), "-o", str(pdf_out)])
+    capsys.readouterr()  # clear stdout from encode
+
+    import json
+
+    rc = main(["verify", str(pdf_out), "--json"])
+    assert rc == 0
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert data["overall"] is True
+    assert data["status"] == "recovered"
+    assert data["payload_valid"] is True
+    assert data["hash_matches"] is True
+
+
+def test_cli_stdin_stdout_piping(monkeypatch):
+    import io
+    import sys
+
+    test_content = "Piped stdin test content."
+
+    # 1. Pipe into encode -> stdout buffer
+    fake_stdin = io.TextIOWrapper(io.BytesIO(test_content.encode("utf-8")))
+    raw_stdout = io.BytesIO()
+    fake_stdout = io.TextIOWrapper(raw_stdout)
+
+    monkeypatch.setattr(sys, "stdin", fake_stdin)
+    monkeypatch.setattr(sys, "stdout", fake_stdout)
+
+    rc = main(["encode", "-", "-o", "-"])
+    assert rc == 0
+    pdf_bytes = raw_stdout.getvalue()
+    assert pdf_bytes.startswith(b"%PDF")
+
+    # 2. Pipe pdf into decode -> stdout text
+    fake_stdin_pdf = io.TextIOWrapper(io.BytesIO(pdf_bytes))
+    raw_decode_out = io.BytesIO()
+    fake_decode_stdout = io.TextIOWrapper(raw_decode_out)
+
+    monkeypatch.setattr(sys, "stdin", fake_stdin_pdf)
+    monkeypatch.setattr(sys, "stdout", fake_decode_stdout)
+
+    rc = main(["decode", "-"])
+    assert rc == 0
+    fake_decode_stdout.flush()
+    assert raw_decode_out.getvalue().decode("utf-8") == test_content
