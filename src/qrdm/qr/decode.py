@@ -458,7 +458,8 @@ def _extract_qr_contents_from_images(
 
 
 def _reconstruct_document_payload(
-    extracted_contents: dict[int, QRContent], passphrase: str | None = None
+    extracted_contents: dict[int, QRContent],
+    passphrase: str | None = None,
 ) -> DocumentPayload:
     """Reconstruct a DocumentPayload from a sequence of individual QR payloads."""
     first_content = next(iter(extracted_contents.values()))
