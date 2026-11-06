@@ -8,15 +8,39 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
 import zlib
 from enum import Enum
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from qrdm.qr import protobuf
 
-__all__ = ["DocumentPayload", "ECSettingValues", "QRContent", "QRMeta", "VerifyResult"]
+__all__ = [
+    "DocumentPayload",
+    "ECSettingValues",
+    "QRContent",
+    "QRMeta",
+    "VerifyResult",
+    "sanitize_filename",
+]
+
+
+def sanitize_filename(filename: str, default: str = "document") -> str:
+    r"""Sanitize an untrusted filename to prevent path traversal and shell injection.
+
+    Strips directory separators (/ and \), null bytes, leading/trailing whitespace,
+    and relative navigation sequences (..).
+    """
+    if not filename:
+        return default
+    cleaned = filename.replace("\\", "/").replace("\x00", "").strip()
+    cleaned = Path(cleaned).name
+    cleaned = re.sub(r'[/\\:\*\?"<>\|]', "_", cleaned)
+    cleaned = cleaned.lstrip(".")
+    return cleaned if cleaned else default
 
 
 class ECSettingValues(str, Enum):
@@ -118,9 +142,22 @@ class DocumentPayload(BaseModel):
         return cls(content=pb.content.decode("utf-8"), metadata=meta_json)
 
     @classmethod
-    def model_validate_compressed_bytes(cls, b: bytes) -> DocumentPayload:
-        """Parse serialized and compressed binary data into a `DocumentPayload`."""
-        inflated_bytes = zlib.decompress(b)
+    def model_validate_compressed_bytes(
+        cls, b: bytes, max_uncompressed_size: int = 50 * 1024 * 1024
+    ) -> DocumentPayload:
+        """Parse serialized and compressed binary data into a `DocumentPayload`.
+
+        Includes a decompression ceiling (`max_uncompressed_size`) to protect against
+        decompression bomb (zip-bomb) Denial-of-Service attacks.
+        """
+        d = zlib.decompressobj()
+        inflated_bytes = d.decompress(b, max_length=max_uncompressed_size + 1)
+        if d.unconsumed_tail or len(inflated_bytes) > max_uncompressed_size:
+            from qrdm.exceptions import QRDecodeError
+
+            raise QRDecodeError(
+                f"Decompression bomb rejected: uncompressed payload exceeds limit ({max_uncompressed_size} bytes)"
+            )
         return cls.model_validate_protobuf_bytes(inflated_bytes)
 
     def _to_proto(self) -> protobuf.DocumentPayload:

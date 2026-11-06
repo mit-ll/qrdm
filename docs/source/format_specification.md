@@ -1,6 +1,6 @@
-# QRDM Format Specification (v2.2.0)
+# QRDM Format Specification (v2.3.0)
 
-This document specifies the canonical data pipeline, wire format, Protobuf schema, and error-correction protocol implemented by the QR Data Manager (QRDM).
+This document specifies the canonical data pipeline, wire format, Protobuf schema, encryption framing, and error-correction protocol implemented by the QR Data Manager (QRDM).
 
 ---
 
@@ -16,6 +16,9 @@ Source Document (UTF-8) + JSON Metadata
                   │
                   ▼
           zlib Compression (Level 9)
+                  │
+                  ▼
+    [Optional AES-256-GCM Payload Encryption]
                   │
                   ▼
           SHA-256 Digest Calculation (32 bytes)
@@ -36,7 +39,7 @@ Source Document (UTF-8) + JSON Metadata
            QR Code Generation (Version 1–40)
                   │
                   ▼
-             ReportLab PDF Layout
+     Direct Vector Drawing & PDF Layout (ReportLab)
 ```
 
 ---
@@ -82,9 +85,11 @@ The input string and optional JSON metadata are encoded into a `DocumentPayload`
 
 ### Step 2: Compression & Hash Calculation
 1. The serialized protobuf bytes are compressed using standard `zlib` compression with compression level `Z_BEST_COMPRESSION` (level 9).
-2. The integrity hash is computed over the compressed bytes with any trailing null padding stripped:
-   $$\text{document\_hash} = \text{SHA-256}(\text{compressed\_bytes.strip}(\texttt{\\0}))$$
-3. The resulting 32-byte binary digest is recorded in `QRMeta.document_hash` across all generated QR codes, and formatted as a 64-character lowercase hex string on the PDF header.
+2. **Optional Encryption**: When a passphrase is provided, the compressed stream is encrypted using AES-256-GCM. The derived key is generated via `PBKDF2-HMAC-SHA256` (100,000 iterations, 16-byte random salt). The encrypted stream is framed as:
+   $$\texttt{b"QRE1"} \,\|\, \text{salt (16 B)} \,\|\, \text{nonce (12 B)} \,\|\, \text{ciphertext + auth tag (16 B)}$$
+3. The integrity hash is computed over the payload bytes (or encrypted framed bytes) with any trailing null padding stripped:
+   $$\text{document\_hash} = \text{SHA-256}(\text{payload\_bytes.strip}(\texttt{\\0}))$$
+4. The resulting 32-byte binary digest is recorded in `QRMeta.document_hash` across all generated QR codes, and formatted as a 64-character lowercase hex string on the PDF header.
 
 ### Step 3: Fragmentation
 The maximum payload capacity per QR code is determined by:
@@ -120,9 +125,12 @@ Each fragment is wrapped in a `QRContent` message and encoded using Python's sta
 
 ## 5. Decoding and Verification Protocol
 
-1. **Page Extraction**: Render PDF pages at 300 DPI into uncompressed bitmaps.
+1. **Parallel Page Extraction**: Render PDF pages concurrently across thread pools. An adaptive two-tier resolution strategy renders first at 150 DPI for high throughput; if barcode detection count falls below the required threshold, 300 DPI fallback rendering is performed.
 2. **Barcode Scan**: Detect QR codes via `pyzbar`. If scan count $< (n_{\text{total}} - \text{num\_ecc})$, apply progressive box-blur filters to recover damaged codes.
 3. **Foreign Code Filter**: When `reject_unexpected_codes=True`, reject non-QRDM barcodes.
 4. **Erasure Decoding**: Fill missing sequence indices with erasure markers and decode via `reedsolo.RSCodec`.
-5. **Integrity Check**: Strip trailing null bytes, compute SHA-256, and compare against `first_code.meta.document_hash`.
-6. **Strict Validation**: If enabled, confirm payload does not violate size limits, contains no NUL bytes, and has no banned binary signatures.
+5. **Decryption & Decompression Defense**:
+   - If payload magic header `QRE1` is detected, authenticate and decrypt using the provided passphrase and AES-256-GCM.
+   - Decompress via `zlib.decompressobj` enforcing a streaming maximum ceiling (`max_uncompressed_size`) to protect against decompression bombs.
+6. **Integrity Check**: Strip trailing null bytes, compute SHA-256, and compare against `first_code.meta.document_hash`.
+7. **Strict Validation**: If enabled, confirm payload does not violate size limits, contains no NUL bytes, and has no banned binary signatures.

@@ -76,6 +76,7 @@ def decode_qr_pdf(
     strict: bool = False,
     max_payload_size: int = 5 * 1024 * 1024,
     dpi: int | None = None,
+    passphrase: str | None = None,
 ) -> DocumentPayload:
     """Decode a QRDM PDF into the original document content and metadata.
 
@@ -136,7 +137,7 @@ def decode_qr_pdf(
             return None, len(extracted_contents)
         try:
             doc_payload = _reconstruct_document_payload(
-                extracted_contents=extracted_contents
+                extracted_contents=extracted_contents, passphrase=passphrase
             )
             if strict:
                 _validate_strict_payload(doc_payload.content, max_size=max_payload_size)
@@ -171,7 +172,7 @@ def decode_qr_pdf(
     try:
         logger.debug("Reconstructing QR Data")
         decoded_document = _reconstruct_document_payload(
-            extracted_contents=extracted_contents
+            extracted_contents=extracted_contents, passphrase=passphrase
         )
     except Exception:
         msg = f"ERROR: Failed to decode PDF, found {len(extracted_contents)} QR codes"
@@ -217,6 +218,7 @@ def verify_qr_pdf(
     strict: bool = False,
     max_payload_size: int = 5 * 1024 * 1024,
     dpi: int | None = None,
+    passphrase: str | None = None,
 ) -> VerifyResult:
     """Verify a QRDM PDF document and return a detailed report without writing files.
 
@@ -300,7 +302,9 @@ def verify_qr_pdf(
         no_unexpected_codes = non_qrdm[0] == 0
 
         try:
-            decoded_doc = _reconstruct_document_payload(extracted_contents)
+            decoded_doc = _reconstruct_document_payload(
+                extracted_contents, passphrase=passphrase
+            )
             if strict:
                 _validate_strict_payload(decoded_doc.content, max_size=max_payload_size)
             payload_valid = True
@@ -454,7 +458,7 @@ def _extract_qr_contents_from_images(
 
 
 def _reconstruct_document_payload(
-    extracted_contents: dict[int, QRContent],
+    extracted_contents: dict[int, QRContent], passphrase: str | None = None
 ) -> DocumentPayload:
     """Reconstruct a DocumentPayload from a sequence of individual QR payloads."""
     first_content = next(iter(extracted_contents.values()))
@@ -531,7 +535,19 @@ def _reconstruct_document_payload(
             msg, missing_codes=dropped_code_inds if dropped_code_inds else None
         )
 
-    output = DocumentPayload.model_validate_compressed_bytes(total_payload_bytes)
+    raw_payload = total_payload_bytes.strip(b"\0")
+    from qrdm.qr import crypto
+
+    if crypto.is_encrypted(raw_payload):
+        if not passphrase:
+            raise QRDecodeError(
+                "Encrypted payload detected: passphrase required to decode."
+            )
+        raw_payload = crypto.decrypt_payload(raw_payload, passphrase)
+    elif passphrase:
+        logger.warning("Passphrase provided but payload is not encrypted.")
+
+    output = DocumentPayload.model_validate_compressed_bytes(raw_payload)
 
     logger.debug("Recomposed document (complete): %r", output)
 

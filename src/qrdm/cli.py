@@ -11,7 +11,7 @@ from pathlib import Path
 
 from qrdm import __version__
 from qrdm.exceptions import QRDecodeError, QRDMError
-from qrdm.models import VerifyResult
+from qrdm.models import VerifyResult, sanitize_filename
 from qrdm.qr.decode import decode_qr_pdf, verify_qr_pdf
 from qrdm.qr.encode import encode_qr_pdf, get_file_content
 
@@ -80,6 +80,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable strict validation (disallow binary/ZIP/Office/NUL bytes).",
     )
+    encode_parser.add_argument(
+        "--passphrase",
+        type=str,
+        default=None,
+        help="Optional passphrase to encrypt QR payload using AES-256-GCM.",
+    )
 
     # decode
     decode_parser = subparsers.add_parser(
@@ -99,6 +105,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--reject-unexpected",
         action="store_true",
         help="Reject non-QRDM barcodes found on pages.",
+    )
+    decode_parser.add_argument(
+        "--passphrase",
+        type=str,
+        default=None,
+        help="Optional passphrase to decrypt AES-256-GCM encrypted QR payload.",
     )
 
     # verify
@@ -126,6 +138,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable strict validation policy during verification.",
     )
+    verify_parser.add_argument(
+        "--passphrase",
+        type=str,
+        default=None,
+        help="Optional passphrase required to decrypt and verify encrypted QR payload.",
+    )
 
     return parser
 
@@ -144,7 +162,7 @@ def main(args: list[str] | None = None) -> int:
                 sys.stderr.write(f"Error: Input file '{in_path}' does not exist.\n")
                 return 1
             file_data = in_path.read_bytes()
-            doc_name = in_path.name
+            doc_name = sanitize_filename(in_path.name)
         else:
             file_data = sys.stdin.buffer.read()
             doc_name = "stdin"
@@ -164,6 +182,7 @@ def main(args: list[str] | None = None) -> int:
                 minimal_mode=parsed_args.minimal,
                 preset=parsed_args.preset,
                 strict=parsed_args.strict,
+                passphrase=parsed_args.passphrase,
             )
             if is_stdout:
                 sys.stdout.buffer.write(pdf_bytes)
@@ -196,7 +215,9 @@ def main(args: list[str] | None = None) -> int:
 
         try:
             doc = decode_qr_pdf(
-                pdf_input, reject_unexpected_codes=parsed_args.reject_unexpected
+                pdf_input,
+                reject_unexpected_codes=parsed_args.reject_unexpected,
+                passphrase=parsed_args.passphrase,
             )
             if parsed_args.output and str(parsed_args.output) != "-":
                 out_p = Path(parsed_args.output)
@@ -228,6 +249,7 @@ def main(args: list[str] | None = None) -> int:
                 pdf_input,
                 reject_unexpected_codes=parsed_args.reject_unexpected,
                 strict=parsed_args.strict,
+                passphrase=parsed_args.passphrase,
             )
 
             if parsed_args.json:
@@ -276,6 +298,7 @@ def main(args: list[str] | None = None) -> int:
                 pdf_path,
                 reject_unexpected_codes=parsed_args.reject_unexpected,
                 strict=parsed_args.strict,
+                passphrase=parsed_args.passphrase,
             )
             batch_results[str(pdf_path)] = r
             if not r.overall:

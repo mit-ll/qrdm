@@ -50,6 +50,9 @@ Request body schema:
   : Layout preset: `'default'` (6 codes/page), `'flatbed'` (12 codes/page for dense scanner grids),
     or `'photo'` (4 large codes/page with higher error correction).
 
+- **`passphrase`** `string`, optional
+  : Optional passphrase to encrypt the QR payload at rest using AES-256-GCM and PBKDF2-HMAC-SHA256 key derivation.
+
 Response:
 
 **`200`** `application/pdf`
@@ -76,6 +79,9 @@ Request body schema:
 - **`reject_unexpected_codes`** `boolean`, optional
   : Whether to fail verification if non-QRDM or foreign barcodes appear on pages.
     Defaults to `false`.
+
+- **`passphrase`** `string`, optional
+  : Passphrase required to decrypt and verify the document payload if encrypted.
 
 Response:
 
@@ -112,6 +118,9 @@ Request body schema:
 
 - **`document`** `string <binary>`, required
   : QRDM PDF file to be decoded
+
+- **`passphrase`** `string`, optional
+  : Passphrase required to decrypt the payload if the document was encrypted.
 
 Response:
 
