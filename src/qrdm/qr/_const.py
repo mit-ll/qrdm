@@ -10,9 +10,9 @@ from qrcode import constants as qrconstants
 __all__ = [
     "BOX_SIZE",
     "EC_CODE_PROPORTION",
-    "ErrorCorrectionLevel",
     "QR_CAPACITIES",
     "QR_SIZE",
+    "ErrorCorrectionLevel",
 ]
 
 # Fits a grid of codes cleanly into US Letter PDF dimensions with pixel size 6

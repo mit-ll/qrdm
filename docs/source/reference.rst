@@ -8,3 +8,5 @@ API Reference
    
    encode_qr_pdf
    decode_qr_pdf
+   verify_qr_pdf
+   VerifyResult

@@ -9,27 +9,26 @@ authors = [
 	{name = "Michael J. Snyder", email="michael.snyder@ll.mit.edu"},
 	{name = "MIT Lincoln Laboratory"},
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
-	"charset-normalizer ~= 3.2",
-	"Pillow ~= 10.1",
-	"protobuf >= 4.22",
-	"pydantic ~= 2.2",
-	"pydantic-settings",
-	"PyMuPDF ~= 1.22",
-	"pyzbar ~= 0.1.8",
-	"qrcode ~= 7.3",
-	"reedsolo ~= 1.7.0",
-	"reportlab ~= 4.0",
-	"structlog ~= 23.0",
-	"svglib ~= 1.5",
+	"charset-normalizer >= 3.2.0",
+	"Pillow >= 10.1.0",
+	"protobuf >= 4.22.0",
+	"pydantic >= 2.4.0",
+	"pydantic-settings >= 2.0.0",
+	"PyMuPDF >= 1.23.0",
+	"pyzbar >= 0.1.8",
+	"qrcode >= 7.3.0",
+	"reedsolo >= 1.7.0",
+	"reportlab >= 4.0.0",
+	"structlog >= 23.1.0",
+	"svglib >= 1.5.0",
 ]
 keywords = ["QR", "QR code"]
 classifiers = [
 	"Development Status :: 4 - Beta",
 	"License :: OSI Approved :: MIT License",
 	"Programming Language :: Python :: 3",
-	"Programming Language :: Python :: 3.9",
 	"Programming Language :: Python :: 3.10",
 	"Programming Language :: Python :: 3.11",
 	"Programming Language :: Python :: 3.12",
@@ -38,22 +37,23 @@ dynamic = ["version", "readme"]
 
 [project.optional-dependencies]
 test = [
-	"pytest ~= 7.0",
-	"coverage[toml]",
+	"pytest >= 7.4.0",
+	"coverage[toml] >= 7.0.0",
 ]
 frontend = [
-	"streamlit ~= 1.28",
+	"streamlit >= 1.28.0",
 ]
 backend = [
-	"fastapi == 0.109",
-	"python-multipart ~= 0.0.6",
+	"fastapi >= 0.115.0",
+	"httpx >= 0.27.0",
+	"python-multipart >= 0.0.9",
 	"starlette[full]",
-	"uvicorn[standard]",
+	"uvicorn[standard] >= 0.27.0",
 ]
 doc = [
 	"furo",
 	"myst-parser",
-	"sphinx ~= 7.2.0",
+	"sphinx >= 7.2.0",
 ]
 dev = [
 	"qrdm[test,frontend,backend,doc]",
@@ -63,6 +63,9 @@ dev = [
 	"build",
 	"twine",
 ]
+
+[project.scripts]
+qrdm = "qrdm.cli:main"
 
 [project.urls]
 Documentation = "https://mit-ll.github.io/qrdm"
@@ -95,9 +98,11 @@ exclude_dirs = ["tests", "build"]
 
 [tool.black]
 skip-magic-trailing-comma = true
+exclude = '''/(src/qrdm/qr/protobuf/.*_pb2.*)/'''
 
 [tool.ruff]
 include = ["*.py", "*.pyi", "**/pyproject.toml"]
+exclude = ["src/qrdm/qr/protobuf/*_pb2.py", "src/qrdm/qr/protobuf/*_pb2.pyi"]
 
 [tool.ruff.lint]
 extend-select = ["I", "RUF", "D"]

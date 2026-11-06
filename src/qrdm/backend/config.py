@@ -2,6 +2,7 @@
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
 """Configuration of the QRDM FastAPI Application."""
+
 import logging
 import sys
 from enum import Enum
@@ -13,7 +14,7 @@ from structlog.types import EventDict, Processor
 
 from qrdm.models import ECSettingValues
 
-__all__ = ["BackendSettings", "get_backend_settings", "configure_app_logging"]
+__all__ = ["BackendSettings", "configure_app_logging", "get_backend_settings"]
 
 
 class LogLevelValues(str, Enum):
@@ -29,6 +30,7 @@ class BackendSettings(BaseSettings):
 
     QRDM_ERROR_TOLERANCE: ECSettingValues = ECSettingValues.M
     QRDM_ENCODE_EC_CODES: bool = True
+    QRDM_INCLUDE_TEXT: bool = False
     QRDM_LOG_LEVEL: LogLevelValues = LogLevelValues.INFO
     QRDM_JSON_LOGS: bool = False
 

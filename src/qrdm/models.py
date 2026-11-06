@@ -2,18 +2,21 @@
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
 """Data structures for representing and serializing QR & document payload data."""
+
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import zlib
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from qrdm.qr import protobuf
 
-__all__ = ["ECSettingValues", "QRMeta", "QRContent", "DocumentPayload"]
+__all__ = ["DocumentPayload", "ECSettingValues", "QRContent", "QRMeta", "VerifyResult"]
 
 
 class ECSettingValues(str, Enum):
@@ -28,7 +31,7 @@ class ECSettingValues(str, Enum):
 class QRMeta(BaseModel):
     """Metadata of individual QRDM QR codes, used for document reconstruction."""
 
-    document_hash: int = Field(ge=0)
+    document_hash: bytes = Field(default=b"")
     sequence_number: int = Field(ge=0)
     total_qr_codes: int = Field(gt=0)
     num_ecc: int = Field(ge=0)
@@ -36,15 +39,23 @@ class QRMeta(BaseModel):
 
     @classmethod
     def _from_proto(cls, pb: protobuf.QRContent.QRMeta) -> QRMeta:
+        doc_hash = pb.document_hash
+        if isinstance(doc_hash, int):
+            doc_hash = doc_hash.to_bytes(8, "big")
         return cls(
-            document_hash=pb.document_hash,
+            document_hash=doc_hash,
             sequence_number=pb.sequence_number,
             total_qr_codes=pb.total_qr_codes,
             num_ecc=pb.num_ecc,
         )
 
     def _to_proto(self) -> protobuf.QRContent.QRMeta:
-        return protobuf.QRContent.QRMeta(**self.model_dump())
+        return protobuf.QRContent.QRMeta(
+            document_hash=self.document_hash,
+            sequence_number=self.sequence_number,
+            total_qr_codes=self.total_qr_codes,
+            num_ecc=self.num_ecc,
+        )
 
 
 class QRContent(BaseModel):
@@ -89,6 +100,11 @@ class DocumentPayload(BaseModel):
     metadata: JsonValue = None
     model_config = ConfigDict(frozen=True)
 
+    @property
+    def sha256(self) -> str:
+        """SHA-256 hex digest of the document content."""
+        return hashlib.sha256(self.content.encode("utf-8")).hexdigest()
+
     @classmethod
     def model_validate_protobuf_bytes(cls, b: bytes) -> DocumentPayload:
         """Parse serialized binary data into a `DocumentPayload`."""
@@ -126,3 +142,21 @@ class DocumentPayload(BaseModel):
         """Serialize this object into compressed binary data."""
         raw_bytes = self.model_dump_protobuf_bytes()
         return zlib.compress(raw_bytes, level=zlib.Z_BEST_COMPRESSION)
+
+
+class VerifyResult(BaseModel):
+    """Structured verification report for a QRDM PDF document."""
+
+    overall: bool
+    status: Literal["recovered", "partial", "failed"]
+    payload_valid: bool
+    hash_matches: bool
+    code_count_correct: bool
+    no_unexpected_codes: bool = True
+    missing_codes: list[int] = Field(default_factory=list)
+    decoded_codes: int = 0
+    expected_codes: int = 0
+    unexpected_codes: int = 0
+    sha256: str = ""
+    errors: list[str] = Field(default_factory=list)
+    model_config = ConfigDict(frozen=True)

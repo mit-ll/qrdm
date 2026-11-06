@@ -1,0 +1,190 @@
+name: Release, Docs, and Publish
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 2.2.0). If omitted, parsed automatically."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Cut Release & Publish
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.version_step.outputs.should_release }}
+      version: ${{ steps.version_step.outputs.version }}
+      tag: ${{ steps.version_step.outputs.tag }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Determine Release Version
+        id: version_step
+        run: |
+          set -euo pipefail
+
+          # 1. Check if user provided manual version input
+          INPUT_VERSION="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            CLEAN_VERSION="$INPUT_VERSION"
+          else
+            # 2. Extract from git commit / merge message (e.g. "from .../2.2.0-SNAPSHOT" or "Release 2.2.0")
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+            MATCHED_VERSION=$(echo "$COMMIT_MSG" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-SNAPSHOT)?' | head -1 || true)
+
+            if [ -n "$MATCHED_VERSION" ]; then
+              CLEAN_VERSION="${MATCHED_VERSION%-SNAPSHOT}"
+            else
+              # 3. Fallback: Parse __version__ from src/qrdm/__init__.py
+              PARSED_VER=$(python3 -c "import re; m = re.search(r'__version__\s*=\s*[\"\\\']([^\"\\\']+)[\"\\\']', open('src/qrdm/__init__.py').read()); print(m.group(1))")
+              CLEAN_VERSION="${PARSED_VER%-SNAPSHOT}"
+            fi
+          fi
+
+          TAG="v${CLEAN_VERSION}"
+          echo "Detected clean version: ${CLEAN_VERSION} (Tag: ${TAG})"
+
+          # Check if tag already exists in the repository
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists on remote. Skipping release."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=${CLEAN_VERSION}" >> "$GITHUB_OUTPUT"
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract Release Notes from CHANGELOG.md
+        if: steps.version_step.outputs.should_release == 'true'
+        run: |
+          python3 - << 'EOF'
+          import re, sys, os
+
+          version = "${{ steps.version_step.outputs.version }}"
+          notes = f"Release v{version}"
+
+          if os.path.isfile("CHANGELOG.md"):
+              with open("CHANGELOG.md") as f:
+                  content = f.read()
+              pattern = rf"##\s*\[{re.escape(version)}\][^\n]*\n(.*?)(?=\n##\s*\[|\Z)"
+              match = re.search(pattern, content, re.DOTALL)
+              if match:
+                  notes = match.group(1).strip()
+
+          with open("release_notes.md", "w") as out:
+              out.write(notes + "\n")
+          print("Extracted release notes:")
+          print(notes)
+          EOF
+
+      - name: Build Python Distribution (Wheel and Sdist)
+        if: steps.version_step.outputs.should_release == 'true'
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --outdir dist/
+
+      - name: Build Offline Bundle Archive
+        if: steps.version_step.outputs.should_release == 'true'
+        run: |
+          mkdir -p dist_assets
+          cp dist/* dist_assets/
+          bash scripts/create_offline_bundle.sh || true
+          if [ -d dist ] && ls dist/*-offline-bundle.tar.gz >/dev/null 2>&1; then
+            cp dist/*-offline-bundle.tar.gz dist_assets/ || true
+          fi
+
+      - name: Create Git Tag and GitHub Release
+        if: steps.version_step.outputs.should_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version_step.outputs.tag }}
+          name: ${{ steps.version_step.outputs.tag }}
+          body_path: release_notes.md
+          files: |
+            dist_assets/*
+          draft: false
+          prerelease: false
+
+      - name: Publish Package to PyPI
+        if: steps.version_step.outputs.should_release == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          password: ${{ secrets.PYPI_API_TOKEN }}
+        continue-on-error: true
+
+  deploy-docs:
+    name: Build & Deploy Documentation to GitHub Pages
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install system dependencies (zbar)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libzbar0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install documentation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[doc,backend,frontend]"
+
+      - name: Build Sphinx Documentation
+        run: |
+          mkdir -p docs_site
+          sphinx-build -b html docs/source docs_site
+          touch docs_site/.nojekyll
+
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs_site
+          publish_branch: gh-pages
+          force_orphan: true
+
+      - name: Configure GitHub Pages Artifact
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./docs_site
+
+      - name: Deploy to GitHub Pages Native
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+

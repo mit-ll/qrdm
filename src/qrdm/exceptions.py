@@ -3,16 +3,22 @@
 # SPDX-License-Identifier: MIT
 """QRDM-specific exception classes."""
 
-__all__ = ["QRDecodeError", "QREncodeError"]
+from __future__ import annotations
+
+__all__ = ["QRDMError", "QRDecodeError", "QREncodeError"]
 
 
-class QRDecodeError(Exception):
+class QRDMError(Exception):
+    """Base exception for all QRDM operations."""
+
+
+class QRDecodeError(QRDMError):
     """Unable to reconstruct a source document from an input file."""
 
-    pass
+    def __init__(self, message: str, *, missing_codes: list[int] | None = None) -> None:
+        super().__init__(message)
+        self.missing_codes = missing_codes
 
 
-class QREncodeError(Exception):
+class QREncodeError(QRDMError):
     """Unable to construct a QR PDF from an input source document."""
-
-    pass

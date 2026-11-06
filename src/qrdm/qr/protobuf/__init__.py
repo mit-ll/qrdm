@@ -2,12 +2,13 @@
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
 """Protobuf definitions and classes for serialization of QRDM documents and QR codes."""
+
 from qrdm.qr.protobuf.qrdm_pb2 import DocumentPayload, QRContent
 
-__all__ = ["QRContent", "DocumentPayload", "PROTOBUF_RESERVED_LEN"]
+__all__ = ["PROTOBUF_RESERVED_LEN", "DocumentPayload", "QRContent"]
 
 MaxLenQrMeta = QRContent.QRMeta(
-    document_hash=2**64 - 1,
+    document_hash=b"\xff" * 32,
     sequence_number=2**32 - 1,
     total_qr_codes=2**32 - 1,
     num_ecc=2**32 - 1,

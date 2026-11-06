@@ -2,6 +2,7 @@
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
 """Render QRDM PDFs from a set of QR codes, via `reportlab`."""
+
 from __future__ import annotations
 
 import io
@@ -9,7 +10,6 @@ import logging
 import time
 from importlib import resources
 from pathlib import Path
-from typing import Optional
 
 from qrcode.main import QRCode
 from reportlab.graphics import renderPDF
@@ -49,8 +49,11 @@ def generate_pdf_pages(
     *,
     buf: io.BufferedIOBase,
     header_text: str = "",
-    qr_text: Optional[str] = None,
-    filename: Optional[str] = None,
+    qr_text: str | None = None,
+    filename: str | None = None,
+    doc_hash: str | None = None,
+    include_timestamp: bool = True,
+    minimal_mode: bool = False,
 ) -> None:
     """Write a QRDM PDF from a list of QRCodes to a binary stream.
 
@@ -69,8 +72,20 @@ def generate_pdf_pages(
     filename: str
         The name of source file that was QR encoded, used to caption the page footer if
         not `None`. Defaults to `None`.
+    doc_hash: str, optional
+        SHA-256 hash of the document to print in the page header. Defaults to `None`.
+    include_timestamp: bool, optional
+        Whether to include a UTC timestamp in the page footer. Set to False for
+        deterministic PDF output. Defaults to `True`.
+    minimal_mode: bool, optional
+        Minimal-page mode: prints only filename, hash, and page number in header with
+        no footer text or caption. Defaults to `False`.
 
     """
+    if minimal_mode:
+        qr_text = None
+        include_timestamp = False
+
     # Render QR codes as images, and convert to reportlab-compatible Drawings
     qr_imgs = _generate_qr_code_svgs(qr_codes=qr_codes)
     reportlab_qrs = _format_reportlab_img(imgs=qr_imgs)
@@ -91,7 +106,11 @@ def generate_pdf_pages(
     logger.debug("QRS_POSITIONS: %r", page_qr_positions)
 
     # Add Sourcing Information
-    render_time = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+    render_time = (
+        time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+        if include_timestamp
+        else ""
+    )
     if filename is not None:
         file_path = Path(filename)
         printable_filename = file_path.name
@@ -100,20 +119,37 @@ def generate_pdf_pages(
                 [file_path.stem[:30], " ... .", file_path.suffix]
             )
         doc_title = f"QR Encoding of {filename}"
-        footer_text = f"Content from {printable_filename} at {render_time}"
+        if include_timestamp:
+            footer_text = f"Content from {printable_filename} at {render_time}"
+        else:
+            footer_text = f"Content from {printable_filename}"
     else:
         printable_filename = None
         doc_title = "QR Encoded Document"
-        footer_text = f"Encoded at {render_time}"
+        if include_timestamp:
+            footer_text = f"Encoded at {render_time}"
+        else:
+            footer_text = "QR Encoded Document"
 
-    c = canvas.Canvas(buf, pagesize=letter)
+    c = canvas.Canvas(
+        buf, pagesize=letter, invariant=1 if not include_timestamp else None
+    )
     c.setAuthor(AUTHOR_NAME)
     c.setTitle(doc_title)
 
     for page_index, qr_range in enumerate(page_qrs, start=1):
         logger.debug(f"Redering PDF page {page_index} of {len(page_qrs)}")
         page_footer_text = footer_text + f", Page {page_index} of {len(page_qrs)}"
-        _draw_header_footer(c, header_text=header_text, footer_text=page_footer_text)
+        _draw_header_footer(
+            c,
+            header_text=header_text,
+            footer_text=page_footer_text,
+            doc_hash=doc_hash,
+            filename=printable_filename,
+            page_index=page_index,
+            total_pages=len(page_qrs),
+            minimal_mode=minimal_mode,
+        )
 
         for j in range(qr_range[0], qr_range[1]):
             _draw_qr_on_canvas(
@@ -229,11 +265,41 @@ def _split_text_across_pages(text: str) -> list[str]:
 
 
 def _draw_header_footer(
-    c: canvas.Canvas, *, header_text: str, footer_text: str
+    c: canvas.Canvas,
+    *,
+    header_text: str = "",
+    footer_text: str = "",
+    doc_hash: str | None = None,
+    filename: str | None = None,
+    page_index: int = 1,
+    total_pages: int = 1,
+    minimal_mode: bool = False,
 ) -> None:
-    c.drawCentredString(4.25 * inch, 0.25 * inch, header_text)
-    c.drawCentredString(4.25 * inch, 10.5 * inch, header_text)
-    c.drawCentredString(4.25 * inch, 0.5 * inch, footer_text)
+    if minimal_mode:
+        # Minimal mode: one centered line with filename, truncated hash, and page info
+        hash_display = f"SHA-256: {doc_hash[:16]}…" if doc_hash else ""
+        filename_display = filename or ""
+        parts = [
+            p
+            for p in [
+                filename_display,
+                hash_display,
+                f"Page {page_index} of {total_pages}",
+            ]
+            if p
+        ]
+        minimal_text = " | ".join(parts)
+        c.drawCentredString(4.25 * inch, 10.5 * inch, minimal_text)
+    else:
+        # Normal mode: header_text top and bottom, footer below, optional hash line
+        c.drawCentredString(4.25 * inch, 10.5 * inch, header_text)
+        c.drawCentredString(4.25 * inch, 0.25 * inch, header_text)
+        if doc_hash:
+            hash_line = f"SHA-256: {doc_hash}"
+            c.setFont("Courier", 6)
+            c.drawCentredString(4.25 * inch, 10.65 * inch, hash_line)
+            c.setFont("Helvetica", 12)
+        c.drawCentredString(4.25 * inch, 0.5 * inch, footer_text)
     # Draw QRDM logo
     with LOGO_PATH.open("rb") as imgfile:
         logo_img = ImageReader(imgfile)

@@ -2,11 +2,12 @@
 # Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
 # SPDX-License-Identifier: MIT
 """FastAPI application router for QR encode & decode functions."""
+
 from __future__ import annotations
 
 import io
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -15,8 +16,8 @@ from pydantic import BaseModel, Json, JsonValue
 
 from qrdm.backend.config import BackendSettings, get_backend_settings
 from qrdm.exceptions import QRDecodeError, QREncodeError
-from qrdm.models import DocumentPayload
-from qrdm.qr.decode import decode_qr_pdf
+from qrdm.models import DocumentPayload, VerifyResult
+from qrdm.qr.decode import decode_qr_pdf, verify_qr_pdf
 from qrdm.qr.encode import encode_qr_pdf, get_file_content
 
 __all__ = ["router"]
@@ -29,26 +30,39 @@ class EncodeData(BaseModel):
     """`/encode` endpoint request data."""
 
     header_text: str = ""
-    encode_ec_codes: Optional[bool] = None
+    encode_ec_codes: bool | None = None
     metadata: JsonValue = None
-    encoding: Optional[str] = None
+    encoding: str | None = None
+    include_text: bool | None = None
+    minimal_mode: bool | None = None
+    preset: str | None = None
 
     @classmethod
     def as_form_data(
         cls,
         header_text: Annotated[str, Form()] = "",
         metadata: Annotated[Json, Form()] = None,
-        encoding: Annotated[Optional[str], Form()] = None,
+        encoding: Annotated[str | None, Form()] = None,
+        include_text: Annotated[bool | None, Form()] = None,
+        minimal_mode: Annotated[bool | None, Form()] = None,
+        preset: Annotated[str | None, Form()] = None,
     ) -> EncodeData:
         """Wrap the`EncodeData` constructor to accept HTTP Form data."""
-        return cls(header_text=header_text, metadata=metadata, encoding=encoding)
+        return cls(
+            header_text=header_text,
+            metadata=metadata,
+            encoding=encoding,
+            include_text=include_text,
+            minimal_mode=minimal_mode,
+            preset=preset,
+        )
 
 
 @router.post("/encode", summary="Encode a plaintext document as a PDF of QR codes")
 def encode_qr_endpoint(
     document: Annotated[UploadFile, File()],
     settings: Annotated[BackendSettings, Depends(get_backend_settings)],
-    body: EncodeData = Depends(EncodeData.as_form_data),
+    body: Annotated[EncodeData, Depends(EncodeData.as_form_data)],
 ) -> Response:
     # FastAPI uses Markdown formatting for docstring rendering in Swagger, etc.
     """Convert a plaintext document to a PDF containing the document encoded as QR codes.
@@ -63,6 +77,8 @@ def encode_qr_endpoint(
       a string. If not provided, defaults to automatic detection via the
       `charset_normalizer` package. Valid encodings can be found in the Python
       documentation: https://docs.python.org/3.9/library/codecs.html#standard-encodings
+    - **include_text** (bool, optional): Whether to print plaintext document text underneath
+      QR codes. Defaults to false.
     """
     # upload_file = body.upload_file
     file_data = document.file.read()
@@ -77,6 +93,12 @@ def encode_qr_endpoint(
     try:
         file_content = get_file_content(file_data, encoding=body.encoding)
         logger.debug("Extracted file content: %r", file_content)
+        include_text = (
+            body.include_text
+            if body.include_text is not None
+            else settings.QRDM_INCLUDE_TEXT
+        )
+        minimal_mode = body.minimal_mode if body.minimal_mode is not None else False
         output_file_data = encode_qr_pdf(
             document_content=file_content,
             header_text=body.header_text,
@@ -84,9 +106,12 @@ def encode_qr_endpoint(
             document_name=upload_filename.name,
             encode_ec_codes=settings.QRDM_ENCODE_EC_CODES,
             error_tolerance=settings.QRDM_ERROR_TOLERANCE,
+            include_text=include_text,
+            minimal_mode=minimal_mode,
+            preset=body.preset,
         )
     except Exception as e:
-        logger.exception(e, success=False)
+        logger.exception("Failed to encode document into QR PDF", success=False)
         if isinstance(e, QREncodeError):
             msg = str(e)
         else:
@@ -134,10 +159,8 @@ def decode_qr_endpoint(document: Annotated[UploadFile, File()]) -> DocumentPaylo
 
     try:
         decoded_content = decode_qr_pdf(file_data)
-        if decoded_content is None:
-            raise QRDecodeError("Could not locate any QR codes in document.")
     except Exception as e:
-        logger.exception(e, success=False)
+        logger.exception("Failed to encode document into QR PDF", success=False)
         if isinstance(e, QRDecodeError):
             msg = str(e)
         else:
@@ -146,3 +169,27 @@ def decode_qr_endpoint(document: Annotated[UploadFile, File()]) -> DocumentPaylo
         raise HTTPException(status_code=500, detail=msg, headers=headers)
     logger.info(f"Completed QR Decode of {document.filename!s}")
     return decoded_content
+
+
+@router.post(
+    "/verify",
+    response_model=VerifyResult,
+    summary="Verify a QRDM PDF without extracting content to disk",
+)
+def verify_qr_endpoint(
+    document: Annotated[UploadFile, File()], reject_unexpected_codes: bool = False
+) -> VerifyResult:
+    """Verify a QRDM PDF without writing files.
+
+    Returns structured status indicating whether the payload is valid, the SHA-256
+    hash matches, all sequence numbers are present, and whether foreign codes exist.
+    """
+    file_data = io.BytesIO(document.file.read())
+    structlog.contextvars.bind_contextvars(
+        action="QR Verify", input_file={"filename": str(document.filename)}
+    )
+    result = verify_qr_pdf(file_data, reject_unexpected_codes=reject_unexpected_codes)
+    logger.info(
+        f"Completed QR Verify of {document.filename!s}: overall={result.overall}, status={result.status}"
+    )
+    return result

@@ -31,7 +31,7 @@ functions. These can be included by specifying `qrdm[backend]` or
 
 The core dependencies of `qrdm` are:
 
-- `python` version 3.9 or later
+- `python` version 3.10 or later
 - `charset-normalizer` version 3.2 or later
 - `Pillow` version 10.1 or later
 - `protobuf` version 4.22 or later

@@ -12,6 +12,10 @@ This will host the app at `http://localhost:8501` by default, with pages for QR 
 and decoding. The host and port can be controlled by passing `--server.port=XXXX` and
 `--server.address=X.X.X.X`, as per the syntax of the `streamlit run` command.
 
+The Web UI provides interactive controls for:
+- **Encoding**: Choosing layout presets (`default`, `flatbed`, `photo`), enabling minimal-page mode, and toggling plaintext printing.
+- **Decoding & Verification**: Reconstructing original documents or performing non-destructive verification without saving output files.
+
 :::{image} _static/streamlit-ui.png
 :alt: Screenshot of a browser window, showing the QRDM Web UI served by Streamlit.
 :::

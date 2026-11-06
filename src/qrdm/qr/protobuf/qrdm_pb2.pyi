@@ -1,14 +1,8 @@
-# Copyright 2024, Massachusetts Institute of Technology
-# Subject to FAR 52.227-11 - Patent Rights - Ownership by the Contractor (May 2014).
-# SPDX-License-Identifier: MIT
-from typing import ClassVar as _ClassVar
-from typing import Mapping as _Mapping
-from typing import Optional as _Optional
-from typing import Union as _Union
-
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
+from collections.abc import Mapping as _Mapping
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -21,13 +15,13 @@ class QRContent(_message.Message):
         SEQUENCE_NUMBER_FIELD_NUMBER: _ClassVar[int]
         TOTAL_QR_CODES_FIELD_NUMBER: _ClassVar[int]
         NUM_ECC_FIELD_NUMBER: _ClassVar[int]
-        document_hash: int
+        document_hash: bytes
         sequence_number: int
         total_qr_codes: int
         num_ecc: int
         def __init__(
             self,
-            document_hash: _Optional[int] = ...,
+            document_hash: _Optional[bytes] = ...,
             sequence_number: _Optional[int] = ...,
             total_qr_codes: _Optional[int] = ...,
             num_ecc: _Optional[int] = ...,

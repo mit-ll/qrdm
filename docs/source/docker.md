@@ -10,8 +10,8 @@ This configuration uses docker compose (via the "docker compose plugin", vs the
 docker-compose executable) to build and run a small docker ecosystem of the services,
 including an nginx reverse proxy.
 
-TLS is setup by default using Self-Signed Certificates, which are included but may also
-be easily replaced with real certificates.
+TLS is configured using certificates in `conf/nginx/private`. Self-signed certificates
+can be generated at deploy time via the provided script, or replaced with real certificates.
 
 ## Building
 
@@ -125,8 +125,12 @@ cd conf/nginx/conf.d
 openssl dhparam -out dhparam.pem 4096
 ```
 
-### Generate new self-signed certificate for SSL/TLS
-To generate a new self-signed certificate, use or adapt the following:
+### Generate self-signed certificate for SSL/TLS
+A helper script is provided to generate a self-signed certificate and private key at deploy time:
+```sh
+./conf/nginx/generate_certs.sh
+```
+Alternatively, to generate manually:
 ```sh
 cd conf/nginx/private
 openssl req -x509 -newkey rsa:4096 -keyout server-key.pem -out server-cert.pem -sha256 \

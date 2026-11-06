@@ -17,9 +17,14 @@ core Python dependencies.
 
 **IMPORTANT**
 > The QR decoding functionality depends on the [`pyzbar`][pyzbar] python package, which
-> in turn depends on the `zbar` shared library. This may require you to install the
+> in turn depends on the `zbar` shared library. This requires installing the
 > `zbar` package via your system's package manager.
-> See the [`pyzbar` installation instructions][pyzbar-install] for more details.
+>
+> - **macOS**: Install via Homebrew (`brew install zbar`) or Conda (`conda install -c conda-forge zbar`).
+>   If `pyzbar` cannot locate the library on macOS, set:
+>   `export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib:$DYLD_FALLBACK_LIBRARY_PATH` (or `/opt/miniconda3/lib`).
+> - **Linux (Debian/Ubuntu)**: `sudo apt-get install libzbar0`
+> - See the [`pyzbar` installation instructions][pyzbar-install] for more details.
 
 [pyzbar]: https://github.com/NaturalHistoryMuseum/pyzbar
 [pyzbar-install]: https://github.com/NaturalHistoryMuseum/pyzbar?tab=readme-ov-file#installation
@@ -28,6 +33,21 @@ Two main "package extras" are available for `qrdm` that provide REST API applica
 ("backend") and Web application ("frontend") services for the QR encoding & decoding
 functions. These can be included by specifying `qrdm[backend]` or
 `qrdm[frontend]` to the installation command above, respectively.
+
+### Command-Line Interface (CLI)
+
+QRDM provides a standalone command-line tool `qrdm` for encoding, decoding, and verifying documents without needing a server:
+
+```sh
+# Encode a document to a QR PDF (minimal mode: filename + hash + page number only)
+qrdm encode document.csv -o document_qr.pdf --minimal
+
+# Verify a QR PDF without extracting or writing files
+qrdm verify document_qr.pdf
+
+# Decode a QR PDF back to the original text
+qrdm decode document_qr.pdf -o recovered.csv
+```
 
 ### Web UI via Streamlit
 A [Streamlit](https://streamlit.io) "frontend" can be run via:
