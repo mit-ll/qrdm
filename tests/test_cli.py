@@ -113,3 +113,34 @@ def test_cli_stdin_stdout_piping(monkeypatch):
     assert rc == 0
     fake_decode_stdout.flush()
     assert raw_decode_out.getvalue().decode("utf-8") == test_content
+
+
+def test_cli_batch_verify(tmp_path: Path, capsys):
+    f1 = tmp_path / "doc1.txt"
+    f2 = tmp_path / "doc2.txt"
+    f1.write_text("Document 1 content", encoding="utf-8")
+    f2.write_text("Document 2 content", encoding="utf-8")
+
+    pdf1 = tmp_path / "doc1_qr.pdf"
+    pdf2 = tmp_path / "doc2_qr.pdf"
+    main(["encode", str(f1), "-o", str(pdf1)])
+    main(["encode", str(f2), "-o", str(pdf2)])
+    capsys.readouterr()
+
+    # Batch verify human-readable
+    rc = main(["verify", str(pdf1), str(pdf2)])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "Batch Verification Report (2 files):" in captured.out
+    assert "2/2 files passed verification." in captured.out
+
+    # Batch verify JSON
+    import json
+
+    rc = main(["verify", str(pdf1), str(pdf2), "--json"])
+    assert rc == 0
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert len(data) == 2
+    assert data[str(pdf1)]["overall"] is True
+    assert data[str(pdf2)]["overall"] is True

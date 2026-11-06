@@ -366,3 +366,28 @@ def test_direct_vector_drawing():
     assert drawing.width > 0
     assert drawing.height == drawing.width
     assert len(drawing.contents) == 1
+
+
+def test_top_level_aliases():
+    import qrdm
+
+    content = "Testing top level aliases encode, decode, and verify."
+    pdf = qrdm.encode(content)
+    assert isinstance(pdf, bytes)
+    v_res = qrdm.verify(pdf)
+    assert v_res.overall is True
+    doc = qrdm.decode(pdf)
+    assert doc.content == content
+
+
+def test_parallel_multi_page_extraction():
+    # Test that _extract_page_images extracts multi-page PDFs concurrently
+    doc = pymupdf.open()
+    for _ in range(5):
+        p = doc.new_page()
+        p.draw_rect([10, 10, 100, 100], fill=(0, 0, 0))
+
+    images = decode._extract_page_images(doc, dpi=150, max_workers=3)
+    assert len(images) == 5
+    for img in images:
+        assert img.width > 0 and img.height > 0

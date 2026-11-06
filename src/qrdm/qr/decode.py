@@ -353,17 +353,44 @@ def verify_qr_pdf(
     return _run_verify_at_dpi(300)
 
 
-def _extract_page_images(doc: pymupdf.Document, dpi: int = 300) -> list[Image.Image]:
-    """Render PDF pages as a sequence of PIL images."""
+def _extract_page_images(
+    doc: pymupdf.Document, dpi: int = 300, max_workers: int | None = None
+) -> list[Image.Image]:
+    """Render PDF pages as a sequence of PIL images in parallel."""
     logger.debug("Rendering PDF pages at %d DPI", dpi)
-    extracted_images = []
-    for page in doc:
-        page_pixmap: pymupdf.Pixmap = page.get_pixmap(dpi=dpi)
+    num_pages = len(doc)
+    if num_pages == 0:
+        return []
+    if num_pages == 1:
+        page_pixmap: pymupdf.Pixmap = doc[0].get_pixmap(dpi=dpi)
         mode = "RGBA" if page_pixmap.alpha else "RGB"
-        extracted_image = Image.frombytes(
+        return [
+            Image.frombytes(
+                mode, [page_pixmap.width, page_pixmap.height], page_pixmap.samples
+            )
+        ]
+
+    try:
+        cpu_count = multiprocessing.cpu_count()
+    except NotImplementedError:
+        cpu_count = 4
+
+    workers = min(max_workers or cpu_count, num_pages, 8)
+
+    def _render_page(pno: int) -> tuple[int, Image.Image]:
+        page = doc[pno]
+        page_pixmap = page.get_pixmap(dpi=dpi)
+        mode = "RGBA" if page_pixmap.alpha else "RGB"
+        img = Image.frombytes(
             mode, [page_pixmap.width, page_pixmap.height], page_pixmap.samples
         )
-        extracted_images.append(extracted_image)
+        return pno, img
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        rendered = list(executor.map(_render_page, range(num_pages)))
+
+    rendered.sort(key=lambda t: t[0])
+    extracted_images = [img for _, img in rendered]
     logger.debug("Rendered %d images from PDF Document", len(extracted_images))
     return extracted_images
 

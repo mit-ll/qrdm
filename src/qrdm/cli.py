@@ -106,7 +106,10 @@ def build_parser() -> argparse.ArgumentParser:
         "verify", help="Verify a QR PDF without extracting content to disk."
     )
     verify_parser.add_argument(
-        "input_pdf", type=str, help="Path to QRDM PDF file, or '-' to read from stdin."
+        "input_pdf",
+        type=str,
+        nargs="+",
+        help="Path(s) to QRDM PDF file(s), or '-' to read from stdin.",
     )
     verify_parser.add_argument(
         "--reject-unexpected",
@@ -209,48 +212,101 @@ def main(args: list[str] | None = None) -> int:
             return 2
 
     elif parsed_args.command == "verify":
-        pdf_arg = str(parsed_args.input_pdf)
-        if pdf_arg == "-":
-            pdf_input = sys.stdin.buffer.read()
-        else:
+        inputs = parsed_args.input_pdf
+        if len(inputs) == 1:
+            pdf_arg = str(inputs[0])
+            if pdf_arg == "-":
+                pdf_input = sys.stdin.buffer.read()
+            else:
+                pdf_path = Path(pdf_arg)
+                if not pdf_path.is_file():
+                    sys.stderr.write(f"Error: Input PDF '{pdf_path}' does not exist.\n")
+                    return 1
+                pdf_input = pdf_path
+
+            result: VerifyResult = verify_qr_pdf(
+                pdf_input,
+                reject_unexpected_codes=parsed_args.reject_unexpected,
+                strict=parsed_args.strict,
+            )
+
+            if parsed_args.json:
+                sys.stdout.write(result.model_dump_json(indent=2) + "\n")
+                return 0 if result.overall else 2
+
+            status_symbol = "✓" if result.overall else "✗"
+            sys.stdout.write(
+                f"[{status_symbol}] Verification: {result.status.upper()} (Overall: {'PASS' if result.overall else 'FAIL'})\n"
+            )
+            sys.stdout.write(f"  • Payload valid:        {result.payload_valid}\n")
+            sys.stdout.write(f"  • SHA-256 matches:      {result.hash_matches}\n")
+            if result.sha256:
+                sys.stdout.write(f"  • SHA-256 digest:       {result.sha256}\n")
+            sys.stdout.write(
+                f"  • Code count correct:   {result.code_count_correct} ({result.decoded_codes}/{result.expected_codes} codes)\n"
+            )
+            sys.stdout.write(
+                f"  • No unexpected codes:  {result.no_unexpected_codes}\n"
+            )
+            if result.missing_codes:
+                sys.stdout.write(f"  • Missing sequences:    {result.missing_codes}\n")
+            if result.unexpected_codes > 0:
+                sys.stdout.write(
+                    f"  • Foreign barcodes:     {result.unexpected_codes}\n"
+                )
+            if result.errors:
+                sys.stdout.write("  • Errors:\n")
+                for err in result.errors:
+                    sys.stderr.write(f"      - {err}\n")
+
+            return 0 if result.overall else 2
+
+        # Multiple files (batch verification)
+        import json
+
+        batch_results: dict[str, VerifyResult] = {}
+        all_passed = True
+        for pdf_arg in inputs:
             pdf_path = Path(pdf_arg)
             if not pdf_path.is_file():
                 sys.stderr.write(f"Error: Input PDF '{pdf_path}' does not exist.\n")
-                return 1
-            pdf_input = pdf_path
-
-        result: VerifyResult = verify_qr_pdf(
-            pdf_input,
-            reject_unexpected_codes=parsed_args.reject_unexpected,
-            strict=parsed_args.strict,
-        )
+                all_passed = False
+                continue
+            r = verify_qr_pdf(
+                pdf_path,
+                reject_unexpected_codes=parsed_args.reject_unexpected,
+                strict=parsed_args.strict,
+            )
+            batch_results[str(pdf_path)] = r
+            if not r.overall:
+                all_passed = False
 
         if parsed_args.json:
-            sys.stdout.write(result.model_dump_json(indent=2) + "\n")
-            return 0 if result.overall else 2
+            sys.stdout.write(
+                json.dumps(
+                    {k: v.model_dump() for k, v in batch_results.items()}, indent=2
+                )
+                + "\n"
+            )
+            return 0 if all_passed else 2
 
-        status_symbol = "✓" if result.overall else "✗"
-        sys.stdout.write(
-            f"[{status_symbol}] Verification: {result.status.upper()} (Overall: {'PASS' if result.overall else 'FAIL'})\n"
-        )
-        sys.stdout.write(f"  • Payload valid:        {result.payload_valid}\n")
-        sys.stdout.write(f"  • SHA-256 matches:      {result.hash_matches}\n")
-        if result.sha256:
-            sys.stdout.write(f"  • SHA-256 digest:       {result.sha256}\n")
-        sys.stdout.write(
-            f"  • Code count correct:   {result.code_count_correct} ({result.decoded_codes}/{result.expected_codes} codes)\n"
-        )
-        sys.stdout.write(f"  • No unexpected codes:  {result.no_unexpected_codes}\n")
-        if result.missing_codes:
-            sys.stdout.write(f"  • Missing sequences:    {result.missing_codes}\n")
-        if result.unexpected_codes > 0:
-            sys.stdout.write(f"  • Foreign barcodes:     {result.unexpected_codes}\n")
-        if result.errors:
-            sys.stdout.write("  • Errors:\n")
-            for err in result.errors:
-                sys.stderr.write(f"      - {err}\n")
+        sys.stdout.write(f"Batch Verification Report ({len(batch_results)} files):\n")
+        passed_count = 0
+        for name, r in batch_results.items():
+            sym = "✓" if r.overall else "✗"
+            if r.overall:
+                passed_count += 1
+                sys.stdout.write(
+                    f"  [{sym}] {name}: PASS ({r.status}, {r.decoded_codes}/{r.expected_codes} codes, SHA-256: {r.sha256[:16]}…)\n"
+                )
+            else:
+                err_str = f" - {', '.join(r.errors)}" if r.errors else ""
+                sys.stdout.write(f"  [{sym}] {name}: FAIL ({r.status}{err_str})\n")
 
-        return 0 if result.overall else 2
+        sys.stdout.write(
+            f"\nSummary: {passed_count}/{len(batch_results)} files passed verification.\n"
+        )
+        return 0 if all_passed else 2
 
     return 0
 

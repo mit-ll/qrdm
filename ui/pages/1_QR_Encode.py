@@ -27,7 +27,7 @@ with col1:
     preset = st.selectbox(
         "Layout Preset",
         ["default", "flatbed", "photo"],
-        help="flatbed: dense 12 codes/page for scanners; photo: large 4 codes/page for phone cameras; default: 6 codes/page",
+        help="flatbed: dense 12 codes/page for document scanners; photo: 4 large codes/page with higher error correction; default: 6 codes/page",
     )
 with col2:
     minimal_mode = st.checkbox(

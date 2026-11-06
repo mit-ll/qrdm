@@ -9,4 +9,17 @@ from qrdm.models import VerifyResult
 from qrdm.qr.decode import decode_qr_pdf, verify_qr_pdf
 from qrdm.qr.encode import encode_qr_pdf
 
-__all__ = ["VerifyResult", "decode_qr_pdf", "encode_qr_pdf", "verify_qr_pdf"]
+# Convenient top-level aliases
+encode = encode_qr_pdf
+decode = decode_qr_pdf
+verify = verify_qr_pdf
+
+__all__ = [
+    "VerifyResult",
+    "decode",
+    "decode_qr_pdf",
+    "encode",
+    "encode_qr_pdf",
+    "verify",
+    "verify_qr_pdf",
+]
