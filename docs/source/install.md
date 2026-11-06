@@ -37,7 +37,7 @@ The core dependencies of `qrdm` are:
 - `protobuf` version 4.22 or later
 - `pydantic` version 2.2 or later
 - `pydantic-settings`
-- `PyMuPDF` version 1.22 or later
+- `PyMuPDF` version 1.23 or later
 - `pyzbar` version 0.1.8 or later
 - `qrcode` version 7.3 or later
 - `reedsolo` version 1.7.0 or later
@@ -50,9 +50,9 @@ The Web UI functionality depends on:
 - `streamlit` version 1.28 or later
 
 The REST API application functionality depends on:
-- `fastapi` version 0.109
-- `python-multipart` version 0.0.6 or later
-- `starlette[full]`
+- `fastapi` version 0.115 or later
+- `python-multipart` version 0.0.9 or later
+- `starlette` version 0.40 or later
 - `uvicorn[standard]`
 
 
