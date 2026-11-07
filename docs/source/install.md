@@ -27,12 +27,40 @@ Two main "package extras" are available for `qrdm` that provide REST API applica
 functions. These can be included by specifying `qrdm[backend]` or
 `qrdm[frontend]` to the installation command above, respectively.
 
+## Command-Line Interface (CLI)
+
+QRDM provides a standalone command-line executable `qrdm` for encoding, decoding, and verifying documents without a server:
+
+```sh
+# Encode a text/CSV document to a QR PDF (minimal mode)
+qrdm encode document.csv -o document_qr.pdf --minimal
+
+# Optionally encrypt the payload at rest using AES-256-GCM
+qrdm encode document.csv -o secret_qr.pdf --passphrase "vault-passphrase"
+
+# Verify a QR PDF without writing extracted files to disk
+qrdm verify document_qr.pdf
+
+# Output machine-readable verification JSON
+qrdm verify document_qr.pdf --json
+
+# Batch verification across multiple files
+qrdm verify doc1_qr.pdf doc2_qr.pdf doc3_qr.pdf
+
+# Decode a QR PDF back to the original text
+qrdm decode document_qr.pdf -o recovered.csv
+
+# Unix piping support via standard I/O ('-')
+cat data.txt | qrdm encode - | qrdm decode -
+```
+
 ## Dependencies
 
 The core dependencies of `qrdm` are:
 
 - `python` version 3.10 or later
 - `charset-normalizer` version 3.2 or later
+- `cryptography` version 42.0 or later
 - `Pillow` version 10.1 or later
 - `protobuf` version 4.22 or later
 - `pydantic` version 2.2 or later

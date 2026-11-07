@@ -42,11 +42,23 @@ QRDM provides a standalone command-line tool `qrdm` for encoding, decoding, and 
 # Encode a document to a QR PDF (minimal mode: filename + hash + page number only)
 qrdm encode document.csv -o document_qr.pdf --minimal
 
+# Optionally encrypt the payload at rest using AES-256-GCM
+qrdm encode document.csv -o secret_qr.pdf --passphrase "vault-passphrase"
+
 # Verify a QR PDF without extracting or writing files
 qrdm verify document_qr.pdf
 
+# Output machine-readable verification JSON
+qrdm verify document_qr.pdf --json
+
+# Batch verification across multiple files
+qrdm verify doc1_qr.pdf doc2_qr.pdf doc3_qr.pdf
+
 # Decode a QR PDF back to the original text
 qrdm decode document_qr.pdf -o recovered.csv
+
+# Unix piping support via standard I/O ('-')
+cat data.txt | qrdm encode - | qrdm decode -
 ```
 
 ### Web UI via Streamlit
