@@ -15,9 +15,9 @@ from qrdm.models import DocumentPayload, QRContent
 from qrdm.qr import decode, encode, pdf_writer
 
 try:
-    import pymupdf as fitz
+    import pymupdf
 except ImportError:
-    import fitz
+    import fitz as pymupdf
 
 payload = """
     Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor
@@ -144,8 +144,8 @@ def test_include_text_opt_in():
 
     # Default: include_text=False (opt-in)
     pdf_no_text = encode.encode_qr_pdf(document_content=secret_text, include_text=False)
-    doc_no_text = fitz.open(stream=io.BytesIO(pdf_no_text), filetype="pdf")
-    all_text_no_text = "".join(page.get_text() for page in doc_no_text)
+    with pymupdf.open(stream=io.BytesIO(pdf_no_text), filetype="pdf") as doc_no_text:
+        all_text_no_text = "".join(page.get_text() for page in doc_no_text)
     assert secret_text not in all_text_no_text
     decoded = decode.decode_qr_pdf(pdf_no_text)
     assert decoded.content == secret_text
@@ -154,8 +154,10 @@ def test_include_text_opt_in():
     pdf_with_text = encode.encode_qr_pdf(
         document_content=secret_text, include_text=True
     )
-    doc_with_text = fitz.open(stream=io.BytesIO(pdf_with_text), filetype="pdf")
-    all_text_with_text = "".join(page.get_text() for page in doc_with_text)
+    with pymupdf.open(
+        stream=io.BytesIO(pdf_with_text), filetype="pdf"
+    ) as doc_with_text:
+        all_text_with_text = "".join(page.get_text() for page in doc_with_text)
     assert secret_text in all_text_with_text
     decoded_opt = decode.decode_qr_pdf(pdf_with_text)
     assert decoded_opt.content == secret_text
@@ -185,8 +187,8 @@ def test_sha256_hash_in_header_and_meta():
     pdf_bytes = encode.encode_qr_pdf(document_content=test_content)
 
     # 1. Check SHA-256 is printed in the PDF header
-    doc = fitz.open(stream=io.BytesIO(pdf_bytes), filetype="pdf")
-    pdf_text = "".join(page.get_text() for page in doc)
+    with pymupdf.open(stream=io.BytesIO(pdf_bytes), filetype="pdf") as doc:
+        pdf_text = "".join(page.get_text() for page in doc)
     assert f"SHA-256: {expected_sha256}" in pdf_text
 
     # 2. Check metadata stores 32 bytes
@@ -204,8 +206,8 @@ def test_minimal_mode():
         document_name="secret_plan.txt",
         minimal_mode=True,
     )
-    doc = fitz.open(stream=io.BytesIO(pdf_bytes), filetype="pdf")
-    pdf_text = "".join(page.get_text() for page in doc)
+    with pymupdf.open(stream=io.BytesIO(pdf_bytes), filetype="pdf") as doc:
+        pdf_text = "".join(page.get_text() for page in doc)
 
     # Filename and truncated hash should appear
     assert "secret_plan.txt" in pdf_text
@@ -302,13 +304,13 @@ def test_layout_presets():
     pdf_flatbed = encode.encode_qr_pdf(
         test_content, preset="flatbed", minimal_mode=True
     )
-    doc_flatbed = fitz.open(stream=io.BytesIO(pdf_flatbed), filetype="pdf")
-    pages_flatbed = len(doc_flatbed)
+    with pymupdf.open(stream=io.BytesIO(pdf_flatbed), filetype="pdf") as doc_flatbed:
+        pages_flatbed = len(doc_flatbed)
 
     # Photo preset (larger codes, box size 8, higher QR ECC)
     pdf_photo = encode.encode_qr_pdf(test_content, preset="photo", minimal_mode=True)
-    doc_photo = fitz.open(stream=io.BytesIO(pdf_photo), filetype="pdf")
-    pages_photo = len(doc_photo)
+    with pymupdf.open(stream=io.BytesIO(pdf_photo), filetype="pdf") as doc_photo:
+        pages_photo = len(doc_photo)
 
     # Flatbed should pack more codes per page than photo
     assert pages_flatbed <= pages_photo
@@ -323,3 +325,69 @@ def test_layout_presets():
     # Invalid preset raises ValueError
     with pytest.raises(ValueError):
         encode.encode_qr_pdf(test_content, preset="invalid_preset")
+
+
+def test_adaptive_dpi_and_explicit_dpi():
+    test_content = "Adaptive DPI and explicit DPI testing content.\n" * 20
+    pdf_bytes = encode.encode_qr_pdf(test_content)
+
+    # 1. Test explicit 150 DPI
+    res_150 = decode.decode_qr_pdf(pdf_bytes, dpi=150)
+    assert res_150.content == test_content
+
+    # 2. Test explicit 300 DPI
+    res_300 = decode.decode_qr_pdf(pdf_bytes, dpi=300)
+    assert res_300.content == test_content
+
+    # 3. Test adaptive default (dpi=None)
+    res_adaptive = decode.decode_qr_pdf(pdf_bytes)
+    assert res_adaptive.content == test_content
+
+    # 4. Verify explicit vs adaptive verify_qr_pdf
+    verify_150 = decode.verify_qr_pdf(pdf_bytes, dpi=150)
+    assert verify_150.overall is True
+    assert verify_150.hash_matches is True
+
+    verify_adaptive = decode.verify_qr_pdf(pdf_bytes)
+    assert verify_adaptive.overall is True
+    assert verify_adaptive.hash_matches is True
+
+
+def test_direct_vector_drawing():
+    import qrcode
+
+    from qrdm.qr.pdf_writer import _convert_qr_to_drawing
+
+    code = qrcode.QRCode(box_size=6, border=0)
+    code.add_data("Direct vector drawing unit test.")
+    code.make(fit=True)
+
+    drawing = _convert_qr_to_drawing(code)
+    assert drawing.width > 0
+    assert drawing.height == drawing.width
+    assert len(drawing.contents) == 1
+
+
+def test_top_level_aliases():
+    import qrdm
+
+    content = "Testing top level aliases encode, decode, and verify."
+    pdf = qrdm.encode(content)
+    assert isinstance(pdf, bytes)
+    v_res = qrdm.verify(pdf)
+    assert v_res.overall is True
+    doc = qrdm.decode(pdf)
+    assert doc.content == content
+
+
+def test_parallel_multi_page_extraction():
+    # Test that _extract_page_images extracts multi-page PDFs concurrently
+    doc = pymupdf.open()
+    for _ in range(5):
+        p = doc.new_page()
+        p.draw_rect([10, 10, 100, 100], fill=(0, 0, 0))
+
+    images = decode._extract_page_images(doc, dpi=150, max_workers=3)
+    assert len(images) == 5
+    for img in images:
+        assert img.width > 0 and img.height > 0

@@ -47,13 +47,25 @@ Request body schema:
     numbers. Defaults to `false`.
 
 - **`preset`** `string`, optional
-  : Layout preset: `'default'` (6 codes/page), `'flatbed'` (12 codes/page for scanners),
-    or `'photo'` (4 large codes/page with Quartile ECC for mobile cameras).
+  : Layout preset: `'default'` (6 codes/page), `'flatbed'` (12 codes/page for dense scanner grids),
+    or `'photo'` (4 large codes/page with higher error correction).
+
+- **`passphrase`** `string`, optional
+  : Optional passphrase to encrypt the QR payload at rest using AES-256-GCM and PBKDF2-HMAC-SHA256 key derivation.
 
 Response:
 
 **`200`** `application/pdf`
 : PDF file containing the QR-encoded document.
+
+### `GET /health`
+
+Application health check for container liveness and readiness probes.
+
+Response:
+
+**`200`** `application/json`
+: `{"status": "ok", "version": "<app_version>"}`
 
 ### `POST /verify`
 
@@ -67,6 +79,9 @@ Request body schema:
 - **`reject_unexpected_codes`** `boolean`, optional
   : Whether to fail verification if non-QRDM or foreign barcodes appear on pages.
     Defaults to `false`.
+
+- **`passphrase`** `string`, optional
+  : Passphrase required to decrypt and verify the document payload if encrypted.
 
 Response:
 
@@ -104,6 +119,9 @@ Request body schema:
 - **`document`** `string <binary>`, required
   : QRDM PDF file to be decoded
 
+- **`passphrase`** `string`, optional
+  : Passphrase required to decrypt the payload if the document was encrypted.
+
 Response:
 
 **`200`** `application/json`
@@ -130,6 +148,17 @@ Configuration of the application is performed via environment variables, as foll
 
   Whether to include additional error-correcting QR codes. These are useful when
   individual QR codes fail to scan. Defaults to `true`.
+
+**`QRDM_INCLUDE_TEXT`**
+: `true` or `false`
+
+  Whether to print plaintext document text underneath QR codes. Defaults to `false`.
+
+**`QRDM_MAX_UPLOAD_SIZE`**
+: integer (bytes)
+
+  Maximum allowed upload file size in bytes. Files larger than this will be rejected
+  with HTTP 413 Payload Too Large. Defaults to `52428800` (50 MB).
 
 **`QRDM_LOG_LEVEL`**
 : One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`

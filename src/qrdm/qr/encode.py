@@ -47,9 +47,14 @@ def encode_qr_pdf(
     metadata: JsonValue | None = ...,
     document_name: str | None = ...,
     encode_ec_codes: bool = ...,
-    error_tolerance: str | ECSettingValues = ...,
+    error_tolerance: str | ECSettingValues | None = ...,
     include_text: bool = ...,
     include_timestamp: bool = ...,
+    minimal_mode: bool = ...,
+    preset: str | None = ...,
+    strict: bool = ...,
+    max_payload_size: int = ...,
+    passphrase: str | None = ...,
 ) -> bytes: ...
 
 
@@ -62,9 +67,14 @@ def encode_qr_pdf(
     metadata: JsonValue | None = ...,
     document_name: str | None = ...,
     encode_ec_codes: bool = ...,
-    error_tolerance: str | ECSettingValues = ...,
+    error_tolerance: str | ECSettingValues | None = ...,
     include_text: bool = ...,
     include_timestamp: bool = ...,
+    minimal_mode: bool = ...,
+    preset: str | None = ...,
+    strict: bool = ...,
+    max_payload_size: int = ...,
+    passphrase: str | None = ...,
 ) -> None: ...
 
 
@@ -105,6 +115,7 @@ def encode_qr_pdf(
     preset: str | None = None,
     strict: bool = False,
     max_payload_size: int = 5 * 1024 * 1024,
+    passphrase: str | None = None,
 ) -> bytes | None:
     """Convert a plaintext document to a PDF containing the document encoded as QR codes.
 
@@ -184,6 +195,7 @@ def encode_qr_pdf(
         error_tolerance=error_tolerance,
         qr_size=qr_size,
         ec_proportion=ec_proportion,
+        passphrase=passphrase,
     )
     qr_codes = generate_qr_codes(
         qr_payloads, error_tolerance=error_tolerance, box_size=box_size
@@ -321,13 +333,19 @@ def generate_qr_payloads(
     error_tolerance: ECSettingValues = ECSettingValues.M,
     qr_size: int = qr_const.QR_SIZE,
     ec_proportion: float = qr_const.EC_CODE_PROPORTION,
+    passphrase: str | None = None,
 ) -> list[bytes]:
     """Construct b85-encoded payloads from a document for QR code construction."""
     logger.debug("Generating QR code payloads")
     total_payload_bytes = document_content.model_dump_compressed_bytes()
-    logger.debug("Compressed document: %s", total_payload_bytes.hex(" ", 4))
+    if passphrase:
+        from qrdm.qr.crypto import encrypt_payload
 
-    hash_bytes = hashlib.sha256(total_payload_bytes.strip(b"\0")).digest()
+        total_payload_bytes = encrypt_payload(total_payload_bytes, passphrase)
+        hash_bytes = hashlib.sha256(total_payload_bytes).digest()
+    else:
+        hash_bytes = hashlib.sha256(total_payload_bytes.strip(b"\0")).digest()
+    logger.debug("Compressed document: %s", total_payload_bytes.hex(" ", 4))
     logger.debug("Document hash (SHA-256): %s", hash_bytes.hex(" ", 4))
     document_hash = hash_bytes  # 32-byte SHA-256 digest stored as bytes
 

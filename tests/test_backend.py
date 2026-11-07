@@ -110,3 +110,23 @@ def test_qr_verify_endpoint():
     assert data["hash_matches"] is True
     assert data["code_count_correct"] is True
     assert data["sha256"] != ""
+
+
+def test_health_endpoint():
+    resp = client.get("/health")
+    assert resp.is_success
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert "version" in data
+
+
+def test_max_upload_size_exceeded(monkeypatch):
+    from qrdm.backend.config import get_backend_settings
+
+    monkeypatch.setattr(get_backend_settings(), "QRDM_MAX_UPLOAD_SIZE", 10)
+
+    resp = client.post(
+        "/encode", files={"document": ("test.txt", b"12345678901234567890")}
+    )
+    assert resp.status_code == 413
+    assert "exceeds size limit" in resp.json()["detail"]

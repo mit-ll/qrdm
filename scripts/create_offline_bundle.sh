@@ -8,7 +8,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 BUNDLE_DIR="${ROOT_DIR}/dist/offline_bundle"
 WHEELS_DIR="${BUNDLE_DIR}/wheels"
-VERSION="2.2.0"
+VERSION=$(python3 -c "import re; m = re.search(r'__version__\s*=\s*[\"\\\']([^\"\\\']+)[\"\\\']', open('${ROOT_DIR}/src/qrdm/__init__.py').read()); print(m.group(1))")
 ARCHIVE_NAME="qrdm-${VERSION}-offline-bundle.tar.gz"
 
 echo "=== Building QRDM Offline Bundle ==="

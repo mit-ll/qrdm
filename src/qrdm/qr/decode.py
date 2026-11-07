@@ -18,9 +18,9 @@ from itertools import chain
 from pathlib import Path
 
 try:
-    import pymupdf as fitz
+    import pymupdf
 except ImportError:
-    import fitz
+    import fitz as pymupdf
 
 if platform.system() == "Darwin":
     # On macOS, ctypes.util.find_library("zbar") often fails to locate libraries
@@ -58,12 +58,25 @@ __all__ = ["decode_qr_pdf", "verify_qr_pdf"]
 logger = logging.getLogger(__name__)
 
 
+def _open_pdf_document(input_file: str | Path | bytes | io.BytesIO) -> pymupdf.Document:
+    """Open a PDF document from a path, raw bytes, or stream with safe rewinding."""
+    if isinstance(input_file, (str, Path)):
+        return pymupdf.open(input_file, filetype="pdf")
+    if isinstance(input_file, bytes):
+        return pymupdf.open(stream=io.BytesIO(input_file), filetype="pdf")
+    if hasattr(input_file, "seek"):
+        input_file.seek(0)
+    return pymupdf.open(stream=input_file, filetype="pdf")
+
+
 def decode_qr_pdf(
     input_file: str | Path | bytes | io.BytesIO,
     *,
     reject_unexpected_codes: bool = False,
     strict: bool = False,
     max_payload_size: int = 5 * 1024 * 1024,
+    dpi: int | None = None,
+    passphrase: str | None = None,
 ) -> DocumentPayload:
     """Decode a QRDM PDF into the original document content and metadata.
 
@@ -71,8 +84,18 @@ def decode_qr_pdf(
     ----------
     input_file: Path-like, bytes, or io.BytesIO
         Path to PDF file, binary stream, or bytes containing the file contents of the QR
-        PDF. (e.g. as returned by `encode_qr_pdf`) Passed as input to the `fitz.open`
+        PDF. (e.g. as returned by `encode_qr_pdf`) Passed as input to `pymupdf.open`
         function provided by PyMuPDF.
+    reject_unexpected_codes: bool, optional
+        Reject non-QRDM barcodes on pages. Defaults to False.
+    strict: bool, optional
+        Enforce strict payload validation policy. Defaults to False.
+    max_payload_size: int, optional
+        Maximum allowed decoded payload size in bytes. Defaults to 5 MB.
+    dpi: int, optional
+        Explicit rendering resolution in DPI. If None (default), uses adaptive
+        two-tier resolution: fast 150 DPI pass first, falling back to 300 DPI
+        if degraded or partial codes require higher resolution.
 
     Returns
     -------
@@ -101,16 +124,43 @@ def decode_qr_pdf(
     DocumentPayload(content='Lorem ipsum dolor sit amet. 😎', metadata={'example': True})
 
     """
-    if isinstance(input_file, (str, Path)):
-        doc = fitz.open(input_file, filetype="pdf")
-    else:
-        if isinstance(input_file, bytes):
-            stream = io.BytesIO(input_file)
-        else:
-            stream = input_file
-        doc = fitz.open(stream=stream, filetype="pdf")
 
-    extracted_images = _extract_page_images(doc)
+    def _attempt_decode(target_dpi: int) -> tuple[DocumentPayload | None, int]:
+        with _open_pdf_document(input_file) as doc:
+            extracted_images = _extract_page_images(doc, dpi=target_dpi)
+        extracted_contents = _extract_qr_contents_from_images(
+            extracted_images, reject_unexpected_codes=reject_unexpected_codes
+        )
+        if len(extracted_contents) == 0:
+            return None, 0
+        if not _sufficient_decodes(extracted_contents):
+            return None, len(extracted_contents)
+        try:
+            doc_payload = _reconstruct_document_payload(
+                extracted_contents=extracted_contents, passphrase=passphrase
+            )
+            if strict:
+                _validate_strict_payload(doc_payload.content, max_size=max_payload_size)
+            return doc_payload, len(extracted_contents)
+        except Exception:  # noqa: BLE001
+            return None, len(extracted_contents)
+
+    # Adaptive DPI: if dpi is not specified, attempt 150 DPI first for ~3x speedup.
+    # If 150 DPI does not recover all necessary codes, fall back to 300 DPI.
+    if dpi is None:
+        fast_doc, count = _attempt_decode(150)
+        if fast_doc is not None:
+            return fast_doc
+        logger.debug(
+            "Adaptive DPI: 150 DPI pass incomplete (%d codes found), falling back to 300 DPI",
+            count,
+        )
+        target_dpi = 300
+    else:
+        target_dpi = dpi
+
+    with _open_pdf_document(input_file) as doc:
+        extracted_images = _extract_page_images(doc, dpi=target_dpi)
     extracted_contents = _extract_qr_contents_from_images(
         extracted_images, reject_unexpected_codes=reject_unexpected_codes
     )
@@ -122,7 +172,7 @@ def decode_qr_pdf(
     try:
         logger.debug("Reconstructing QR Data")
         decoded_document = _reconstruct_document_payload(
-            extracted_contents=extracted_contents
+            extracted_contents=extracted_contents, passphrase=passphrase
         )
     except Exception:
         msg = f"ERROR: Failed to decode PDF, found {len(extracted_contents)} QR codes"
@@ -167,6 +217,8 @@ def verify_qr_pdf(
     reject_unexpected_codes: bool = False,
     strict: bool = False,
     max_payload_size: int = 5 * 1024 * 1024,
+    dpi: int | None = None,
+    passphrase: str | None = None,
 ) -> VerifyResult:
     """Verify a QRDM PDF document and return a detailed report without writing files.
 
@@ -182,120 +234,167 @@ def verify_qr_pdf(
         Path or stream to the QRDM PDF.
     reject_unexpected_codes: bool, optional
         If True, marks verification as failed if non-QRDM barcodes are found.
+    strict: bool, optional
+        Enforce strict payload validation policy. Defaults to False.
+    max_payload_size: int, optional
+        Maximum allowed decoded payload size in bytes. Defaults to 5 MB.
+    dpi: int, optional
+        Explicit rendering resolution in DPI. If None (default), uses adaptive
+        two-tier resolution: fast 150 DPI pass first, falling back to 300 DPI
+        if degraded or partial codes require higher resolution.
 
     Returns
     -------
     VerifyResult
         Structured verification report containing status, check flags, and metadata.
     """
-    errors: list[str] = []
-    try:
-        if isinstance(input_file, (str, Path)):
-            doc = fitz.open(input_file, filetype="pdf")
-        else:
-            if isinstance(input_file, bytes):
-                stream = io.BytesIO(input_file)
-            else:
-                stream = input_file
-            doc = fitz.open(stream=stream, filetype="pdf")
-    except Exception as e:  # noqa: BLE001
-        return VerifyResult(
-            overall=False,
-            status="failed",
-            payload_valid=False,
-            hash_matches=False,
-            code_count_correct=False,
-            errors=[f"Could not open PDF: {e}"],
-        )
 
-    non_qrdm = [0]
-    try:
-        extracted_images = _extract_page_images(doc)
-        extracted_contents = _extract_qr_contents_from_images(
-            extracted_images, reject_unexpected_codes=False, non_qrdm_count=non_qrdm
-        )
-    except Exception as e:  # noqa: BLE001
+    def _run_verify_at_dpi(target_dpi: int) -> VerifyResult:
+        errors: list[str] = []
+        non_qrdm = [0]
+        try:
+            with _open_pdf_document(input_file) as doc:
+                extracted_images = _extract_page_images(doc, dpi=target_dpi)
+        except Exception as e:  # noqa: BLE001
+            return VerifyResult(
+                overall=False,
+                status="failed",
+                payload_valid=False,
+                hash_matches=False,
+                code_count_correct=False,
+                errors=[f"Could not open or parse PDF: {e}"],
+            )
+
+        try:
+            extracted_contents = _extract_qr_contents_from_images(
+                extracted_images, reject_unexpected_codes=False, non_qrdm_count=non_qrdm
+            )
+        except Exception as e:  # noqa: BLE001
+            return VerifyResult(
+                overall=False,
+                status="failed",
+                payload_valid=False,
+                hash_matches=False,
+                code_count_correct=False,
+                unexpected_codes=non_qrdm[0],
+                no_unexpected_codes=(non_qrdm[0] == 0),
+                errors=[f"Failed to extract images or codes: {e}"],
+            )
+
+        if not extracted_contents:
+            return VerifyResult(
+                overall=False,
+                status="failed",
+                payload_valid=False,
+                hash_matches=False,
+                code_count_correct=False,
+                unexpected_codes=non_qrdm[0],
+                no_unexpected_codes=(non_qrdm[0] == 0),
+                errors=["Failed to extract any QR data from input document"],
+            )
+
+        first_content = next(iter(extracted_contents.values()))
+        expected_codes = first_content.meta.total_qr_codes
+        missing_codes = [
+            ii for ii in range(expected_codes) if ii not in extracted_contents
+        ]
+        code_count_correct = len(missing_codes) == 0
+        no_unexpected_codes = non_qrdm[0] == 0
+
+        try:
+            decoded_doc = _reconstruct_document_payload(
+                extracted_contents, passphrase=passphrase
+            )
+            if strict:
+                _validate_strict_payload(decoded_doc.content, max_size=max_payload_size)
+            payload_valid = True
+            hash_matches = True
+            sha256 = decoded_doc.sha256
+            status = "recovered"
+        except QRDecodeError as e:
+            payload_valid = False
+            hash_matches = False
+            sha256 = ""
+            status = "partial" if extracted_contents else "failed"
+            errors.append(str(e))
+            if e.missing_codes:
+                missing_codes = e.missing_codes
+        except Exception as e:  # noqa: BLE001
+            payload_valid = False
+            hash_matches = False
+            sha256 = ""
+            status = "failed"
+            errors.append(str(e))
+
+        overall = payload_valid and hash_matches
+        if reject_unexpected_codes and not no_unexpected_codes:
+            overall = False
+            errors.append(f"Found {non_qrdm[0]} non-QRDM barcode(s) on page")
+
         return VerifyResult(
-            overall=False,
-            status="failed",
-            payload_valid=False,
-            hash_matches=False,
-            code_count_correct=False,
+            overall=overall,
+            status=status,
+            payload_valid=payload_valid,
+            hash_matches=hash_matches,
+            code_count_correct=code_count_correct,
+            no_unexpected_codes=no_unexpected_codes,
+            missing_codes=missing_codes,
+            decoded_codes=len(extracted_contents),
+            expected_codes=expected_codes,
             unexpected_codes=non_qrdm[0],
-            no_unexpected_codes=(non_qrdm[0] == 0),
-            errors=[f"Failed to extract images or codes: {e}"],
+            sha256=sha256,
+            errors=errors,
         )
 
-    if not extracted_contents:
-        return VerifyResult(
-            overall=False,
-            status="failed",
-            payload_valid=False,
-            hash_matches=False,
-            code_count_correct=False,
-            unexpected_codes=non_qrdm[0],
-            no_unexpected_codes=(non_qrdm[0] == 0),
-            errors=["Failed to extract any QR data from input document"],
-        )
+    if dpi is not None:
+        return _run_verify_at_dpi(dpi)
 
-    first_content = next(iter(extracted_contents.values()))
-    expected_codes = first_content.meta.total_qr_codes
-    missing_codes = [ii for ii in range(expected_codes) if ii not in extracted_contents]
-    code_count_correct = len(missing_codes) == 0
-    no_unexpected_codes = non_qrdm[0] == 0
+    res_150 = _run_verify_at_dpi(150)
+    if res_150.overall:
+        return res_150
+
+    logger.debug("Adaptive DPI: 150 DPI verification incomplete, retrying at 300 DPI")
+    return _run_verify_at_dpi(300)
+
+
+def _extract_page_images(
+    doc: pymupdf.Document, dpi: int = 300, max_workers: int | None = None
+) -> list[Image.Image]:
+    """Render PDF pages as a sequence of PIL images in parallel."""
+    logger.debug("Rendering PDF pages at %d DPI", dpi)
+    num_pages = len(doc)
+    if num_pages == 0:
+        return []
+    if num_pages == 1:
+        page_pixmap: pymupdf.Pixmap = doc[0].get_pixmap(dpi=dpi)
+        mode = "RGBA" if page_pixmap.alpha else "RGB"
+        return [
+            Image.frombytes(
+                mode, [page_pixmap.width, page_pixmap.height], page_pixmap.samples
+            )
+        ]
 
     try:
-        decoded_doc = _reconstruct_document_payload(extracted_contents)
-        if strict:
-            _validate_strict_payload(decoded_doc.content, max_size=max_payload_size)
-        payload_valid = True
-        hash_matches = True
-        sha256 = decoded_doc.sha256
-        status = "recovered"
-    except QRDecodeError as e:
-        payload_valid = False
-        hash_matches = False
-        sha256 = ""
-        status = "partial" if extracted_contents else "failed"
-        errors.append(str(e))
-        if e.missing_codes:
-            missing_codes = e.missing_codes
-    except Exception as e:  # noqa: BLE001
-        payload_valid = False
-        hash_matches = False
-        sha256 = ""
-        status = "failed"
-        errors.append(str(e))
+        cpu_count = multiprocessing.cpu_count()
+    except NotImplementedError:
+        cpu_count = 4
 
-    overall = payload_valid and hash_matches
-    if reject_unexpected_codes and not no_unexpected_codes:
-        overall = False
-        errors.append(f"Found {non_qrdm[0]} non-QRDM barcode(s) on page")
+    workers = min(max_workers or cpu_count, num_pages, 8)
 
-    return VerifyResult(
-        overall=overall,
-        status=status,
-        payload_valid=payload_valid,
-        hash_matches=hash_matches,
-        code_count_correct=code_count_correct,
-        no_unexpected_codes=no_unexpected_codes,
-        missing_codes=missing_codes,
-        decoded_codes=len(extracted_contents),
-        expected_codes=expected_codes,
-        unexpected_codes=non_qrdm[0],
-        sha256=sha256,
-        errors=errors,
-    )
+    def _render_page(pno: int) -> tuple[int, Image.Image]:
+        page = doc[pno]
+        page_pixmap = page.get_pixmap(dpi=dpi)
+        mode = "RGBA" if page_pixmap.alpha else "RGB"
+        img = Image.frombytes(
+            mode, [page_pixmap.width, page_pixmap.height], page_pixmap.samples
+        )
+        return pno, img
 
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        rendered = list(executor.map(_render_page, range(num_pages)))
 
-def _extract_page_images(doc: fitz.Document) -> list[Image.Image]:
-    """Render PDF pages as a sequence of PNG images."""
-    logger.debug("Rendering PDF pages")
-    extracted_images = []
-    for page in doc:
-        page_pixmap: fitz.Pixmap = page.get_pixmap(dpi=300)
-        extracted_image = Image.open(io.BytesIO(page_pixmap.tobytes("png")))
-        extracted_images.append(extracted_image)
+    rendered.sort(key=lambda t: t[0])
+    extracted_images = [img for _, img in rendered]
     logger.debug("Rendered %d images from PDF Document", len(extracted_images))
     return extracted_images
 
@@ -359,7 +458,7 @@ def _extract_qr_contents_from_images(
 
 
 def _reconstruct_document_payload(
-    extracted_contents: dict[int, QRContent],
+    extracted_contents: dict[int, QRContent], passphrase: str | None = None
 ) -> DocumentPayload:
     """Reconstruct a DocumentPayload from a sequence of individual QR payloads."""
     first_content = next(iter(extracted_contents.values()))
@@ -419,24 +518,65 @@ def _reconstruct_document_payload(
     total_payload_bytes = b"".join(sorted_payloads)
     logger.debug("Concatenated total payload: %s", total_payload_bytes.hex(" ", 4))
 
-    hash_bytes_check = hashlib.sha256(total_payload_bytes.strip(b"\0")).digest()
-    logger.debug("Recovered document hash (SHA-256): %s", hash_bytes_check.hex(" ", 4))
-    if hash_bytes_check != first_content.meta.document_hash:
-        logger.error(
-            "Recovered document does not match verification hash: "
-            f"{hash_bytes_check.hex()} vs. {first_content.meta.document_hash.hex()}"
-        )
-        msg = (
-            f"Recovered document does not match checksum. "
-            f"Extracted {len(extracted_contents)} of {total_qr_codes} codes."
-        )
-        if dropped_code_inds:
-            msg += f" Missing sequence numbers: {dropped_code_inds}"
-        raise QRDecodeError(
-            msg, missing_codes=dropped_code_inds if dropped_code_inds else None
-        )
+    import struct
 
-    output = DocumentPayload.model_validate_compressed_bytes(total_payload_bytes)
+    from qrdm.qr import crypto
+
+    if crypto.is_encrypted(total_payload_bytes):
+        len_offset = 4 + crypto.SALT_SIZE + crypto.NONCE_SIZE
+        ct_len = struct.unpack(">I", total_payload_bytes[len_offset : len_offset + 4])[
+            0
+        ]
+        exact_len = crypto.HEADER_SIZE + ct_len
+        raw_payload = total_payload_bytes[:exact_len]
+        hash_bytes_check = hashlib.sha256(raw_payload).digest()
+        logger.debug(
+            "Recovered document hash (SHA-256): %s", hash_bytes_check.hex(" ", 4)
+        )
+        if hash_bytes_check != first_content.meta.document_hash:
+            logger.error(
+                "Recovered document does not match verification hash: "
+                f"{hash_bytes_check.hex()} vs. {first_content.meta.document_hash.hex()}"
+            )
+            msg = (
+                f"Recovered document does not match checksum. "
+                f"Extracted {len(extracted_contents)} of {total_qr_codes} codes."
+            )
+            if dropped_code_inds:
+                msg += f" Missing sequence numbers: {dropped_code_inds}"
+            raise QRDecodeError(
+                msg, missing_codes=dropped_code_inds if dropped_code_inds else None
+            )
+
+        if not passphrase:
+            raise QRDecodeError(
+                "Encrypted payload detected: passphrase required to decode."
+            )
+        raw_payload = crypto.decrypt_payload(raw_payload, passphrase)
+    else:
+        raw_payload = total_payload_bytes.strip(b"\0")
+        hash_bytes_check = hashlib.sha256(raw_payload).digest()
+        logger.debug(
+            "Recovered document hash (SHA-256): %s", hash_bytes_check.hex(" ", 4)
+        )
+        if hash_bytes_check != first_content.meta.document_hash:
+            logger.error(
+                "Recovered document does not match verification hash: "
+                f"{hash_bytes_check.hex()} vs. {first_content.meta.document_hash.hex()}"
+            )
+            msg = (
+                f"Recovered document does not match checksum. "
+                f"Extracted {len(extracted_contents)} of {total_qr_codes} codes."
+            )
+            if dropped_code_inds:
+                msg += f" Missing sequence numbers: {dropped_code_inds}"
+            raise QRDecodeError(
+                msg, missing_codes=dropped_code_inds if dropped_code_inds else None
+            )
+        if passphrase:
+            logger.warning("Passphrase provided but payload is not encrypted.")
+
+    output = DocumentPayload.model_validate_compressed_bytes(raw_payload)
 
     logger.debug("Recomposed document (complete): %r", output)
 

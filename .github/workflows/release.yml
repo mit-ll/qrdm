@@ -10,11 +10,17 @@ on:
         description: "Release version (e.g. 2.2.0). If omitted, parsed automatically."
         required: false
         type: string
+      force_publish:
+        description: "Force build, release, and publish even if git tag exists"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
   pages: write
   id-token: write
+  attestations: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -48,6 +54,8 @@ jobs:
 
           # 1. Check if user provided manual version input
           INPUT_VERSION="${{ github.event.inputs.version }}"
+          FORCE_PUBLISH="${{ github.event.inputs.force_publish }}"
+
           if [ -n "$INPUT_VERSION" ]; then
             CLEAN_VERSION="$INPUT_VERSION"
           else
@@ -68,8 +76,8 @@ jobs:
           echo "Detected clean version: ${CLEAN_VERSION} (Tag: ${TAG})"
 
           # Check if tag already exists in the repository
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists on remote. Skipping release."
+          if git rev-parse "$TAG" >/dev/null 2>&1 && [ "$FORCE_PUBLISH" != "true" ]; then
+            echo "Tag $TAG already exists on remote and force_publish is not enabled. Skipping release."
             echo "should_release=false" >> "$GITHUB_OUTPUT"
           else
             echo "should_release=true" >> "$GITHUB_OUTPUT"
@@ -106,6 +114,12 @@ jobs:
           python -m pip install --upgrade pip build
           python -m build --outdir dist/
 
+      - name: Generate Artifact Attestations (Provenance)
+        if: steps.version_step.outputs.should_release == 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'dist/*'
+
       - name: Build Offline Bundle Archive
         if: steps.version_step.outputs.should_release == 'true'
         run: |
@@ -128,18 +142,42 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Publish Package to PyPI
+      - name: Check for PyPI Token
+        id: check_token
         if: steps.version_step.outputs.should_release == 'true'
+        env:
+          PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -n "$PYPI_TOKEN" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish Package to PyPI (Trusted Publishing via OIDC)
+        if: steps.version_step.outputs.should_release == 'true' && steps.check_token.outputs.has_token == 'false'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+      - name: Publish Package to PyPI (API Token Fallback)
+        if: steps.version_step.outputs.should_release == 'true' && steps.check_token.outputs.has_token == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
           password: ${{ secrets.PYPI_API_TOKEN }}
-        continue-on-error: true
 
   deploy-docs:
     name: Build & Deploy Documentation to GitHub Pages
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -165,8 +203,25 @@ jobs:
       - name: Build Sphinx Documentation
         run: |
           mkdir -p docs_site
-          sphinx-build -b html docs/source docs_site
+          # Build docs, keeping .doctrees outside docs_site to avoid Jekyll scanner conflicts
+          sphinx-build -b html -d /tmp/doctrees docs/source docs_site
           touch docs_site/.nojekyll
+
+          # Create _config.yml so Jekyll (if executed in branch mode) includes Sphinx assets
+          cat << 'EOF' > docs_site/_config.yml
+          include:
+            - _static
+            - _images
+            - _modules
+            - _sources
+            - .nojekyll
+          EOF
+
+          # Mirror to _build/html/ and docs/ to support legacy URLs & path configurations
+          mkdir -p docs_site/_build/html
+          cp -r docs_site/*.html docs_site/_static docs_site/_images docs_site/_build/html/ 2>/dev/null || true
+          mkdir -p docs_site/docs
+          cp -r docs_site/*.html docs_site/docs/ 2>/dev/null || true
 
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
@@ -185,6 +240,7 @@ jobs:
           path: ./docs_site
 
       - name: Deploy to GitHub Pages Native
+        id: deployment
         uses: actions/deploy-pages@v4
         continue-on-error: true
 

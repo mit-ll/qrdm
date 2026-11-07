@@ -31,6 +31,7 @@ class BackendSettings(BaseSettings):
     QRDM_ERROR_TOLERANCE: ECSettingValues = ECSettingValues.M
     QRDM_ENCODE_EC_CODES: bool = True
     QRDM_INCLUDE_TEXT: bool = False
+    QRDM_MAX_UPLOAD_SIZE: int = 50 * 1024 * 1024  # 50 MB
     QRDM_LOG_LEVEL: LogLevelValues = LogLevelValues.INFO
     QRDM_JSON_LOGS: bool = False
 

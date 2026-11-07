@@ -56,6 +56,12 @@ async def logging_middleware(request: Request, call_next) -> Response:
     return response
 
 
+@app.get("/health", tags=["Application"], summary="Application health check")
+def health_check():
+    """Return application health status for container probes."""
+    return {"status": "ok", "version": app.version}
+
+
 @app.get("/version", tags=["Application"], summary="Application version")
 def get_version():
     """Return the version of the running QRDM application."""

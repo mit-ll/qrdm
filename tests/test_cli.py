@@ -60,3 +60,87 @@ def test_cli_strict_rejection(tmp_path: Path):
     pdf_out = tmp_path / "bad.pdf"
     rc = main(["encode", str(bad_file), "-o", str(pdf_out), "--strict"])
     assert rc == 2
+
+
+def test_cli_verify_json(tmp_path: Path, capsys):
+    test_file = tmp_path / "data.txt"
+    test_content = "Machine readable verify test"
+    test_file.write_text(test_content, encoding="utf-8")
+    pdf_out = tmp_path / "data_qr.pdf"
+    main(["encode", str(test_file), "-o", str(pdf_out)])
+    capsys.readouterr()  # clear stdout from encode
+
+    import json
+
+    rc = main(["verify", str(pdf_out), "--json"])
+    assert rc == 0
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert data["overall"] is True
+    assert data["status"] == "recovered"
+    assert data["payload_valid"] is True
+    assert data["hash_matches"] is True
+
+
+def test_cli_stdin_stdout_piping(monkeypatch):
+    import io
+    import sys
+
+    test_content = "Piped stdin test content."
+
+    # 1. Pipe into encode -> stdout buffer
+    fake_stdin = io.TextIOWrapper(io.BytesIO(test_content.encode("utf-8")))
+    raw_stdout = io.BytesIO()
+    fake_stdout = io.TextIOWrapper(raw_stdout)
+
+    monkeypatch.setattr(sys, "stdin", fake_stdin)
+    monkeypatch.setattr(sys, "stdout", fake_stdout)
+
+    rc = main(["encode", "-", "-o", "-"])
+    assert rc == 0
+    pdf_bytes = raw_stdout.getvalue()
+    assert pdf_bytes.startswith(b"%PDF")
+
+    # 2. Pipe pdf into decode -> stdout text
+    fake_stdin_pdf = io.TextIOWrapper(io.BytesIO(pdf_bytes))
+    raw_decode_out = io.BytesIO()
+    fake_decode_stdout = io.TextIOWrapper(raw_decode_out)
+
+    monkeypatch.setattr(sys, "stdin", fake_stdin_pdf)
+    monkeypatch.setattr(sys, "stdout", fake_decode_stdout)
+
+    rc = main(["decode", "-"])
+    assert rc == 0
+    fake_decode_stdout.flush()
+    assert raw_decode_out.getvalue().decode("utf-8") == test_content
+
+
+def test_cli_batch_verify(tmp_path: Path, capsys):
+    f1 = tmp_path / "doc1.txt"
+    f2 = tmp_path / "doc2.txt"
+    f1.write_text("Document 1 content", encoding="utf-8")
+    f2.write_text("Document 2 content", encoding="utf-8")
+
+    pdf1 = tmp_path / "doc1_qr.pdf"
+    pdf2 = tmp_path / "doc2_qr.pdf"
+    main(["encode", str(f1), "-o", str(pdf1)])
+    main(["encode", str(f2), "-o", str(pdf2)])
+    capsys.readouterr()
+
+    # Batch verify human-readable
+    rc = main(["verify", str(pdf1), str(pdf2)])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "Batch Verification Report (2 files):" in captured.out
+    assert "2/2 files passed verification." in captured.out
+
+    # Batch verify JSON
+    import json
+
+    rc = main(["verify", str(pdf1), str(pdf2), "--json"])
+    assert rc == 0
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert len(data) == 2
+    assert data[str(pdf1)]["overall"] is True
+    assert data[str(pdf2)]["overall"] is True

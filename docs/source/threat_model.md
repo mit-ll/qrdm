@@ -26,19 +26,33 @@ This document outlines the security properties, guarantees, and explicit non-gua
 5. **Strict Mode Enforcement**
    - When strict mode is enabled, QRDM rejects payloads containing NUL bytes (`0x00`), payloads exceeding maximum byte limits, and documents matching binary signatures (such as ZIP, DOCX/XLSX/PPTX, OLE2, ELF, or Windows PE executables).
 
+6. **Optional Payload Encryption at Rest (AES-256-GCM)**
+   - QRDM provides built-in authenticated encryption for sensitive payloads via the `--passphrase` parameter in CLI, Python API, and HTTP REST endpoints.
+   - Keys are derived using PBKDF2-HMAC-SHA256 (100,000 iterations) with a 16-byte cryptographically secure random salt and a 12-byte random nonce per document.
+   - Payloads are authenticated with AES-256-GCM tags. Attempted tampering or incorrect passphrases immediately abort decoding.
+
+7. **Decompression Bomb Protection & Hard Input Ceilings**
+   - Compressed payloads are inspected using a hard streaming ceiling (`max_uncompressed_size`, 50 MB default).
+   - Any inflated stream exceeding the limit is aborted before large buffers can be allocated in memory, preventing zip-bomb Denial-of-Service attacks.
+   - HTTP endpoints enforce a configurable upload size ceiling (`QRDM_MAX_UPLOAD_SIZE`, 50 MB default) returning HTTP 413.
+
+8. **Path Traversal & Filename Sanitization**
+   - Input and decoded filenames are normalized and sanitized via `sanitize_filename`.
+   - Relative directory traversal sequences (`..`), forward/backslashes, null bytes (`\x00`), and restricted filesystem characters are stripped or neutralized.
+
 ---
 
 ## What QRDM Does NOT Guarantee
 
-> [!WARNING]
-> **QRDM DOES NOT ENCRYPT DATA.**
-> QRDM compresses data using `zlib` and serializes it using Protocol Buffers and Base85. **This is encoding, not encryption.** Any person, phone camera, or barcode reader can read the content.
+> [!NOTE]
+> **Encryption is Opt-In:**
+> Unless the `--passphrase` option is explicitly supplied, QRDM compresses data using `zlib` and serializes it using Protocol Buffers and Base85. Unencrypted QRDM documents can be decoded by any compliant reader.
 > 
-> If the data is confidential, **encrypt the data before passing it to QRDM** (for example, with GPG, age, or AES-GCM).
+> When confidentiality is required on physical media, always provide a strong passphrase or pre-encrypt documents.
 
 1. **No Cryptographic Authenticity or Non-Repudiation**
-   - QRDM verifies that the document matches the hash recorded in the QR metadata. However, QRDM does not cryptographically sign documents with a private PKI key.
-   - An adversary with access to the source file can generate a new, valid QRDM PDF for a modified document with a valid corresponding SHA-256 hash. If tamper-evident provenance is needed, sign the payload cryptographically before encoding or sign the resulting PDF.
+   - QRDM verifies that the document matches the hash recorded in the QR metadata. However, standard QRDM does not digitally sign documents with an asymmetric private PKI key.
+   - An adversary with access to the source file can generate a new, valid QRDM PDF for a modified document with a valid corresponding SHA-256 hash. If tamper-evident provenance or non-repudiation is needed, sign the payload cryptographically before encoding or sign the resulting PDF.
 
 2. **Downstream Payload Safety**
    - QRDM reconstructs text documents faithfully. It does not sanitize content against application-level vulnerabilities such as CSV formula injection (`=cmd|...`), SQL injection, or shell script injection.
